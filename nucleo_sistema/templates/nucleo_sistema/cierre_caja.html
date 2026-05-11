@@ -1,0 +1,95 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Cierre de Caja - Market Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .contenedor { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .tarjeta-resumen { background: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+        .fila-resumen { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 1.1em; border-bottom: 1px dotted #ccc; padding-bottom: 5px; }
+        .total-esperado { font-size: 1.4em; font-weight: bold; color: #007bff; margin-top: 15px; border-top: 2px solid #007bff; padding-top: 10px; }
+        .zona-cierre { text-align: center; border-top: 2px solid #eee; margin-top: 20px; padding-top: 20px; }
+        .input-fisico { width: 100%; padding: 15px; font-size: 1.5em; border: 2px solid #6c757d; border-radius: 5px; text-align: center; font-weight: bold; margin-bottom: 20px; box-sizing: border-box; }
+        .btn-cerrar { background-color: #dc3545; color: white; padding: 15px; font-size: 1.2em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; }
+        .btn-cerrar:hover { background-color: #bd2130; }
+        .mensaje { padding: 15px; border-radius: 5px; margin-bottom: 20px; display: none; font-weight: bold; text-align: center; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <nav style="background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <span style="color: white; font-weight: bold; font-size: 1.2em; margin-right: auto;">Market Data POS</span>
+        <a href="/pos/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #007bff; border-radius: 5px;">🛒 Ventas</a>
+        <a href="/recaudacion/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #17a2b8; border-radius: 5px;">💰 Fiados</a>
+        <a href="/caja/cierre/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #dc3545; border-radius: 5px;">🔒 Cerrar Caja</a>
+    </nav>    
+    <div class="contenedor">
+        <h2 style="text-align: center; color: #343a40;">Cierre de Turno</h2>        
+        <div id="mensaje-estado" class="mensaje"></div>
+        <div class="tarjeta-resumen">
+            <h4 style="margin-top: 0; color: #6c757d;">Resumen de Movimientos</h4>
+            <div class="fila-resumen"><span>Fondo Inicial:</span> <span>$<span id="res-fondo">0</span></span></div>
+            <div class="fila-resumen"><span>Ventas Efectivo:</span> <span>$<span id="res-ventas">0</span></span></div>
+            <div class="fila-resumen"><span>Pagos Fiados:</span> <span>$<span id="res-abonos">0</span></span></div>
+            <div class="fila-resumen total-esperado">
+                <span>Saldo Esperado en Caja:</span>
+                <span>$<span id="res-total">0</span></span>
+            </div>
+        </div>
+        <div class="zona-cierre">
+            <label style="display: block; margin-bottom: 10px; font-weight: bold;">Monto Físico Contado ($):</label>
+            <input type="number" id="input-monto-real" class="input-fisico" placeholder="Ingrese monto total en efectivo">
+            <button class="btn-cerrar" id="btn-ejecutar-cierre">Finalizar Turno y Cerrar Caja</button>
+        </div>
+    </div>
+
+    <script>
+        const idUsuarioActual = parseInt("{{ request.session.id_usuario|default:'0' }}");
+        const mensajeEstado = document.getElementById('mensaje-estado');
+        //datos de cuadratura al iniciar
+        async function cargarCuadratura() {
+            try {
+                const res = await fetch(`/api/caja/estado/?id_usuario=${idUsuarioActual}`);
+                const datos = await res.json();                
+                if (res.ok) {
+                    document.getElementById('res-fondo').textContent = datos.fondo_inicial;
+                    document.getElementById('res-ventas').textContent = datos.ventas_efectivo;
+                    document.getElementById('res-abonos').textContent = datos.abonos_fiados;
+                    document.getElementById('res-total').textContent = datos.total_esperado_en_caja;
+                } else {
+                    window.location.href = '/caja/apertura/'; //si no hay caja, mandarlo a abrir
+                }
+            } catch (e) { console.error("Error al cargar datos."); }
+        }
+        document.getElementById('btn-ejecutar-cierre').addEventListener('click', async () => {
+            const montoReal = parseInt(document.getElementById('input-monto-real').value);
+            if (isNaN(montoReal) || montoReal < 0) {
+                return alert("Ingrese un monto válido para el cierre.");
+            }
+            const confirmacion = confirm(`ATENCIÓN: Está a punto de finalizar su turno.\nMonto físico declarado: $${montoReal}\n\n¿Está absolutamente seguro? Esta acción no se puede deshacer.`);
+            if (!confirmacion) return;
+            const payload = {
+                id_usuario: idUsuarioActual,
+                monto_real: montoReal,
+                monto_esperado: parseInt(document.getElementById('res-total').textContent)
+            };
+            try {
+                const res = await fetch('/api/caja/cerrar/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });                
+                if (res.ok) {
+                    alert("Turno finalizado exitosamente. El sistema se redirigirá.");
+                    window.location.href = '/logout/';
+                }
+            } catch (e) { console.error("Error al cerrar."); }
+        });
+        cargarCuadratura();
+    </script>
+</body>
+</html>

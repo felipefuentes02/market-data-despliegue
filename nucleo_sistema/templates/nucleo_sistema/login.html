@@ -1,0 +1,54 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Market Data POS</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #343a40; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .contenedor-login { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 100%; max-width: 350px; text-align: center; }
+        h1 { color: #007bff; margin-bottom: 5px; }
+        h3 { color: #6c757d; margin-top: 0; margin-bottom: 30px; font-weight: normal; }
+        .grupo-input { margin-bottom: 20px; text-align: left; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #495057; }
+        input { width: 100%; padding: 12px; border: 1px solid #ced4da; border-radius: 5px; box-sizing: border-box; font-size: 1.1em; }
+        input:focus { border-color: #80bdff; outline: none; }
+        .btn-ingresar { background-color: #28a745; color: white; padding: 15px; font-size: 1.2em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; transition: background 0.3s; }
+        .btn-ingresar:hover { background-color: #218838; }        
+        .alerta { padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 0.95em; text-align: center; border: 1px solid transparent; font-weight: bold; }
+        .alerta-error { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+        .alerta-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+    </style>
+</head>
+<body>
+    <div class="contenedor-login">
+        <h1>Market Data</h1>
+        <h3>Acceso al Sistema</h3>
+        <!-- motor de mensajes -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alerta {% if message.tags == 'success' %}alerta-success{% else %}alerta-error{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+        <form method="POST" action="{% url 'pantalla_login' %}">
+            {% csrf_token %}
+            <div class="grupo-input">
+                <label>Nombre de Usuario</label>
+                <input type="text" name="usuario" placeholder="Ingrese su usuario" required autofocus>
+            </div>
+            <div class="grupo-input">
+                <label>Contraseña</label>
+                <input type="password" name="clave" placeholder="Ingrese su contraseña" required>
+            </div>
+            <div style="text-align: center; margin-top: 15px; margin-bottom: 20px;">
+                <a href="{% url 'pantalla_recuperar_password' %}" style="font-size: 0.9em; color: #007bff; text-decoration: none;">¿Olvidaste tu contraseña (Admin/Analista)?</a>
+            </div>
+            <button type="submit" class="btn-ingresar">Iniciar Sesión</button>
+        </form>
+    </div>
+</body>
+</html>

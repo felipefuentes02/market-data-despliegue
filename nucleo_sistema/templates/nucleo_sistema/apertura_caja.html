@@ -1,0 +1,77 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apertura de Caja - Market Data</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .contenedor { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+        h2 { color: #343a40; margin-bottom: 20px; }
+        .descripcion { color: #6c757d; margin-bottom: 30px; font-size: 1.1em; }
+        .input-monto { width: 100%; padding: 15px; font-size: 1.5em; border: 2px solid #007bff; border-radius: 5px; text-align: center; font-weight: bold; box-sizing: border-box; margin-bottom: 20px; }
+        .btn-abrir { background-color: #007bff; color: white; padding: 15px 30px; font-size: 1.2em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; transition: background 0.3s; }
+        .btn-abrir:hover { background-color: #0056b3; }
+        .mensaje-error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px; margin-bottom: 20px; display: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="contenedor">
+        <h2>Apertura de Turno</h2>
+        <p class="descripcion">Declare el fondo de caja inicial (sencillo) para comenzar a vender.</p>        
+        <div id="alerta-error" class="mensaje-error"></div>        
+        <label style="display: block; text-align: left; margin-bottom: 10px; font-weight: bold; color: #495057;">Monto Inicial ($):</label>
+        <input type="number" id="input-fondo" class="input-monto" placeholder="Ej: 20000" autofocus>        
+        <button class="btn-abrir" id="btn-abrir">Iniciar Turno de Ventas</button>
+    </div>
+
+    <script>
+        const inputFondo = document.getElementById('input-fondo');
+        const btnAbrir = document.getElementById('btn-abrir');
+        const alertaError = document.getElementById('alerta-error');
+        const idUsuarioActual = parseInt("{{ request.session.id_usuario|default:'0' }}");
+        const rutTiendaActual = "{{ request.session.rut_tienda|default:'' }}";
+
+        function mostrarError(mensaje) {
+            alertaError.textContent = mensaje;
+            alertaError.style.display = mensaje ? 'block' : 'none';
+        }
+
+        btnAbrir.addEventListener('click', async () => {
+            const monto = parseInt(inputFondo.value);            
+            if (isNaN(monto) || monto < 0) {
+                return mostrarError("Por favor, ingrese un monto válido (puede ser 0).");
+            }
+            //validador de confirmacion
+            const confirmacion = confirm(`¿Está seguro de iniciar el turno con un fondo de caja de $${monto}?`);
+            if (!confirmacion) return; // Si el usuario cancela, se detiene el proceso
+            const payload = {
+                id_usuario: idUsuarioActual,
+                rut_tienda: rutTiendaActual,
+                monto_apertura: monto
+            };
+            try {
+                const res = await fetch('/api/caja/abrir/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });                
+                if (res.ok) {
+                    window.location.href = '/pos/';
+                } else {
+                    const error = await res.json();
+                    mostrarError("Error: " + (error.error || "No se pudo abrir la caja."));
+                }
+            } catch (e) {
+                mostrarError("Error de conexión con el servidor.");
+            }
+        });
+        //envio con la tecla enter
+        inputFondo.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') btnAbrir.click();
+        });
+    </script>
+</body>
+</html>

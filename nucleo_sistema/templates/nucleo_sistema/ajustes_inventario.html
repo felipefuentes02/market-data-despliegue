@@ -1,0 +1,221 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajustes de Inventario - Market Data</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .navbar { background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); align-items: center; border-radius: 5px; }
+        .navbar span { color: white; font-weight: bold; font-size: 1.2em; margin-right: auto; }
+        .navbar a { color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; border-radius: 5px; background-color: #6c757d; }
+        .contenedor { max-width: 1300px; margin: auto; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }        
+        .panel { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .panel h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        .grupo-input { margin-bottom: 15px; position: relative; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #495057; font-size: 0.9em; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
+        .btn-guardar { background-color: #ffc107; color: #343a40; padding: 12px; font-size: 1em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        .grid-filtros { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #dee2e6; }        
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #f8f9fa; color: #495057; position: sticky; top: 0; }
+        .stock-critico { color: #dc3545; font-weight: bold; }
+        .contenedor-tabla { max-height: 500px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span>⚖️ Control y Ajustes de Inventario</span>
+        <a href="/dashboard/">⬅️ Volver al Panel</a>
+    </nav>
+    <div class="contenedor">
+        <div class="panel">
+            <h3>Declarar Ajuste</h3>            
+            <div class="grupo-input">
+                <label>Buscar Producto</label>
+                <input type="text" id="buscador-producto" placeholder="Escriba nombre o código..." autocomplete="off">
+                <input type="hidden" id="cod_barra_seleccionado">
+                <div id="resultados-busqueda" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; z-index: 1000; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+            </div>
+            <div class="grupo-input">
+                <label>Motivo del Ajuste</label>
+                <select id="motivo_ajuste" autocomplete="off">
+                    <option value="" selected disabled>-- Seleccione un Motivo --</option>
+                    <option value="Merma">Merma (Vencimiento / Daño)</option>
+                    <option value="Robo">Robo / Pérdida</option>
+                    <option value="Consumo Interno">Consumo Interno</option>
+                    <option value="Error Factura">Corrección de Ingreso (Error)</option>
+                </select>
+            </div>
+            <div class="grupo-input">
+                <label>Stock Físico Real</label>
+                <input type="number" id="nuevo_stock" placeholder="Cantidad exacta existente en el local" autocomplete="off">
+            </div>
+            <button class="btn-guardar" id="btn-procesar-ajuste">Aplicar Corrección de Stock</button>
+        </div>
+        <div class="panel">
+            <h3>Stock Actual</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            
+            <a href="{% url 'exportar_inventario_excel' %}?q={{ q_actual }}&marca={{ marca_actual }}&categoria={{ categoria_actual }}" 
+            style="background-color: #217346; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span>📥 Descargar Stock (Excel)</span>
+            </a>
+        </div>
+        <form method="GET" action="" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; background: #fdfdfd; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">            
+            <input type="text" name="q" value="{{ q_actual }}" placeholder="Buscar código o descripción..." style="flex: 2; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">            
+            <select name="marca" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="">Todas las Marcas</option>
+                {% for m in marcas %}
+                    <option value="{{ m }}" {% if m == marca_actual %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <select name="categoria" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="">Todas las Categorías</option>
+                {% for c in categorias %}
+                    <option value="{{ c }}" {% if c == categoria_actual %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" style="background: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer;">Filtrar</button>
+            <a href="?" style="background: #6c757d; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; text-align: center;">Limpiar</a>
+        </form>
+            <div class="contenedor-tabla">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cód. Barra</th>
+                            <th>Producto</th>
+                            <th>Marca</th>
+                            <th>Categoría</th>
+                            <th>Stock</th>
+                            <th>Alerta Umbral</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuerpo-inventario">
+                        {% for item in inventario %}
+                        <tr>
+                            <td>{{ item.cod_barra.cod_barra }}</td>
+                            <td>{{ item.cod_barra.descripcion }}</td>
+                            <td>{{ item.cod_barra.marca }}</td>
+                            <td>{{ item.cod_barra.categoria }}</td>
+                            <td class="{% if item.umbral_seguridad and item.stock_actual <= item.umbral_seguridad %}stock-critico{% elif not item.umbral_seguridad and item.stock_actual <= 5 %}stock-critico{% endif %}">
+                                {{ item.stock_actual }}
+                            </td>
+                            <td style="text-align: center;">
+                                {% if item.umbral_seguridad %}
+                                    <span style="background-color: #ffc107; color: #343a40; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold;">
+                                        🔔 Aviso a los: {{ item.umbral_seguridad }}
+                                    </span>
+                                {% else %}
+                                    <span style="color: #adb5bd; font-size: 0.8em;">Sin alerta</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #6c757d;">No hay inventario registrado en esta tienda.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            //1 BUSCADOR PREDICTIVO PARA EL AJUSTE DE INVENTARIO
+            let timeoutBuscador = null;
+            const inputBuscador = document.getElementById('buscador-producto');
+            const divResultados = document.getElementById('resultados-busqueda');
+            const inputCodBarra = document.getElementById('cod_barra_seleccionado');
+            if (inputBuscador) {
+                inputBuscador.addEventListener('input', function() {
+                    clearTimeout(timeoutBuscador);
+                    const query = this.value.trim();
+                    if (query.length < 3) {
+                        divResultados.style.display = 'none';
+                        inputCodBarra.value = '';
+                        return;
+                    }
+                    timeoutBuscador = setTimeout(async () => {
+                        try {
+                            const res = await fetch(`/api/productos/buscar/?q=${encodeURIComponent(query)}`);
+                            if (!res.ok) throw new Error("Falla de comunicación con la base de datos");                            
+                            const data = await res.json();
+                            divResultados.innerHTML = '';                            
+                            if (data.length > 0) {
+                                data.forEach(p => {
+                                    const div = document.createElement('div');
+                                    div.style.padding = '10px';
+                                    div.style.cursor = 'pointer';
+                                    div.style.borderBottom = '1px solid #eee';
+                                    div.textContent = `${p.descripcion} (${p.marca})`;                                    
+                                    div.addEventListener('click', () => {
+                                        inputBuscador.value = p.descripcion; 
+                                        inputCodBarra.value = p.cod_barra;   
+                                        divResultados.style.display = 'none';
+                                        document.getElementById('motivo_ajuste').focus(); 
+                                    });                                    
+                                    div.addEventListener('mouseover', () => div.style.background = '#f8f9fa');
+                                    div.addEventListener('mouseout', () => div.style.background = 'white');
+                                    divResultados.appendChild(div);
+                                });
+                                divResultados.style.display = 'block';
+                            } else {
+                                divResultados.innerHTML = '<div style="padding: 10px; color: #6c757d;">Sin resultados</div>';
+                                divResultados.style.display = 'block';
+                            }
+                        } catch (e) { 
+                            console.error("Error buscando:", e); 
+                        }
+                    }, 300); 
+                });
+                //cerrar el buscador al hacer clic afuera
+                document.addEventListener('click', (e) => {
+                    if (e.target !== inputBuscador && e.target !== divResultados) {
+                        divResultados.style.display = 'none';
+                    }
+                });
+            }
+            //2 PROCESAMIENTO DEL AJUSTE DE INVENTARIO
+            const btnProcesar = document.getElementById('btn-procesar-ajuste');
+            if (btnProcesar) {
+                btnProcesar.addEventListener('click', async () => {
+                    try {
+                        const codBarra = inputCodBarra.value;
+                        const nuevoStock = document.getElementById('nuevo_stock').value;
+                        const motivo = document.getElementById('motivo_ajuste').value;
+                        //validaciones front para evitar errores
+                        if (!codBarra) return alert("⚠️ Por favor, busque y seleccione un producto de la lista.");
+                        if (!motivo) return alert("⚠️ Por favor, seleccione el motivo del ajuste.");
+                        if (nuevoStock === '') return alert("⚠️ Por favor, ingrese el stock físico real.");
+                        if (!confirm(`¿Confirmar ajuste por ${motivo}?\n\nEl stock de este producto se sobrescribirá matemáticamente a: ${nuevoStock} unidades.`)) return;
+                        const res = await fetch('/api/inventario/ajustar/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cod_barra: codBarra, nuevo_stock: nuevoStock, motivo: motivo })
+                        });                        
+                        if (res.ok) {
+                            alert("✅ Inventario ajustado correctamente.");
+                            //limpieza antes de recargar
+                            document.getElementById('motivo_ajuste').selectedIndex = 0;
+                            document.getElementById('nuevo_stock').value = '';
+                            window.location.reload(); 
+                        } else {
+                            const errorData = await res.json();
+                            alert("❌ Error del servidor: " + (errorData.error || "Falla desconocida"));
+                        }
+                    } catch (e) { 
+                        alert("Falla de interfaz: " + e.message);
+                        console.error("Error al procesar ajuste:", e); 
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

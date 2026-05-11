@@ -1,0 +1,145 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Recaudación Fiados - Market Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .contenedor { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .buscador { width: 100%; padding: 15px; font-size: 1.2em; border: 2px solid #ffc107; border-radius: 5px; margin-bottom: 20px; box-sizing: border-box; }        
+        .estado-transaccion { padding: 15px; margin-bottom: 20px; border-radius: 5px; display: none; font-weight: bold; text-align: center; }
+        .exito { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .panel-cuenta { display: none; background: #e9ecef; padding: 20px; border-radius: 5px; border: 1px solid #dee2e6; margin-bottom: 20px; }
+        .fila-cuenta { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 1.1em; color: #495057; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .deuda-destacada { font-size: 1.5em; font-weight: bold; color: #dc3545; margin-top: 15px; border-top: 2px solid #adb5bd; padding-top: 10px; }
+        .zona-pago { display: none; background: #f8f9fa; padding: 20px; border-radius: 5px; border: 1px solid #dee2e6; text-align: right; }
+        .input-monto { padding: 15px; font-size: 1.2em; border: 2px solid #28a745; border-radius: 5px; width: 200px; text-align: right; font-weight: bold; }
+        .btn-cobrar { background-color: #28a745; color: white; padding: 15px 30px; font-size: 1.2em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 15px; }
+        .btn-cobrar:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+    <nav style="background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <span style="color: white; font-weight: bold; font-size: 1.2em; margin-right: auto;">Market Data POS</span>
+        <a href="/pos/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #007bff; border-radius: 5px;">🛒 Ventas</a>
+        <a href="/recaudacion/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #17a2b8; border-radius: 5px;">💰 Fiados</a>
+        <a href="/caja/cierre/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #dc3545; border-radius: 5px;">🔒 Cerrar Caja</a>
+    </nav>
+    <div class="contenedor">
+        <h1>Módulo de Recaudación</h1>        
+        <div id="zona-estado" class="estado-transaccion"></div>        
+        <input type="text" id="input-rut" class="buscador" placeholder="Ingrese el RUT del cliente y presione Enter..." autofocus autocomplete="off">
+        <div id="panel-cuenta" class="panel-cuenta">
+            <h3 style="margin-top: 0; color: #007bff;">Cliente: <span id="lbl-nombre">---</span></h3>
+            <div class="fila-cuenta">
+                <span>Total Histórico Comprado:</span>
+                <span>$<span id="lbl-compras">0</span></span>
+            </div>
+            <div class="fila-cuenta">
+                <span>Total Histórico Pagado:</span>
+                <span style="color: #28a745;">-$<span id="lbl-abonos">0</span></span>
+            </div>
+            <div class="fila-cuenta deuda-destacada">
+                <span>Deuda Actual Vencida:</span>
+                <span>$<span id="lbl-deuda">0</span></span>
+            </div>
+        </div>
+        <div id="zona-pago" class="zona-pago">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-size: 1.2em; font-weight: bold;">Monto a Abonar Hoy: $</label>
+                <input type="number" id="input-monto" class="input-monto" placeholder="0">
+            </div>
+            <button class="btn-cobrar" id="btn-registrar-pago">Registrar Pago en Caja</button>
+        </div>
+    </div>
+
+    <script>
+        const inputRut = document.getElementById('input-rut');
+        const inputMonto = document.getElementById('input-monto');
+        const btnRegistrar = document.getElementById('btn-registrar-pago');
+        const panelCuenta = document.getElementById('panel-cuenta');
+        const zonaPago = document.getElementById('zona-pago');
+        const zonaEstado = document.getElementById('zona-estado');        
+        let rutActual = null; //memoria del cliente consultado para usar en el pago
+
+        function mostrarMensaje(texto, tipo) {
+            zonaEstado.textContent = texto;
+            zonaEstado.className = `estado-transaccion ${tipo}`;
+            zonaEstado.style.display = 'block';
+            setTimeout(() => { zonaEstado.style.display = 'none'; }, 5000);
+        }
+        //1 consultar la deuda al presionar Enter
+        inputRut.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const rut = inputRut.value.trim();
+                if (!rut) return;
+                try {
+                    const res = await fetch(`/api/fiado/estado/?rut=${rut}`);
+                    const datos = await res.json();
+                    if (res.ok) {
+                        rutActual = datos.rut;                        
+                        // completar la interfaz con los cálculos de postgres
+                        document.getElementById('lbl-nombre').textContent = datos.nombre_completo;
+                        document.getElementById('lbl-compras').textContent = datos.total_historico_compras;
+                        document.getElementById('lbl-abonos').textContent = datos.total_historico_pagos;
+                        document.getElementById('lbl-deuda').textContent = datos.deuda_actual;
+                        panelCuenta.style.display = 'block'; //mostrar panel de cuenta siempre que la consulta sea exitosa, aunque la deuda sea 0, para mostrar el historial                        
+                        if (datos.deuda_actual > 0) {
+                            zonaPago.style.display = 'block';
+                            inputMonto.value = datos.deuda_actual; //sugerir pago total
+                            inputMonto.focus(); //saltar cursor al monto automáticamente
+                        } else {
+                            zonaPago.style.display = 'none';
+                            mostrarMensaje("Este cliente no tiene deudas pendientes.", "exito");
+                        }
+                    } else {
+                        panelCuenta.style.display = 'none';
+                        zonaPago.style.display = 'none';
+                        mostrarMensaje(datos.error, "error");
+                    }
+                } catch (error) {
+                    mostrarMensaje("Error de red al consultar el estado de cuenta.", "error");
+                }
+            }
+        });
+        btnRegistrar.addEventListener('click', async () => {
+            const monto = parseInt(inputMonto.value);            
+            if (!monto || monto <= 0) {
+                return mostrarMensaje("El monto ingresado no es válido.", "error");
+            }
+            //validador de confirmación
+            const confirmacion = confirm(`¿Confirmar ingreso de efectivo a la caja?\nMonto del abono: $${monto}`);
+            if (!confirmacion) return; //se cancela la operación
+            const payload = {
+                rut_cliente: rutActual,
+                monto: monto,
+                id_usuario: parseInt("{{ request.session.id_usuario|default:'0' }}")
+            };
+            try {
+                const res = await fetch('/api/fiado/pagar/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });                
+                const respuesta = await res.json();
+                if (res.ok) {
+                    mostrarMensaje(respuesta.mensaje, "exito");
+                    panelCuenta.style.display = 'none';
+                    zonaPago.style.display = 'none';
+                    inputRut.value = '';
+                    inputRut.focus();
+                } else {
+                    mostrarMensaje("Error: " + respuesta.error, "error");
+                }
+            } catch (e) {
+                mostrarMensaje("Error de conexión con el servidor al registrar el pago.", "error");
+            }
+        });
+    </script>
+</body>
+</html>

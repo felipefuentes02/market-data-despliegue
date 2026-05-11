@@ -1,0 +1,342 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal POS - Market Data</title>
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .contenedor { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .buscador { width: 100%; padding: 15px; font-size: 1.2em; border: 2px solid #007bff; border-radius: 5px; margin-bottom: 20px; box-sizing: border-box; }        
+        .estado-transaccion { padding: 15px; margin-bottom: 20px; border-radius: 5px; display: none; font-weight: bold; text-align: center; }
+        .exito { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #007bff; color: white; }
+        .fila-fiada { background-color: #fff8e1; color: #856404; font-style: italic; }        
+        .panel-cliente { display: none; background: #e9ecef; padding: 20px; margin-top: 20px; border-radius: 5px; border: 1px solid #dee2e6; }
+        .panel-totales { margin-top: 20px; text-align: right; background: #f8f9fa; padding: 20px; border-radius: 5px; border: 1px solid #dee2e6; }
+        .btn-cobrar { background-color: #28a745; color: white; padding: 15px 30px; font-size: 1.2em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <nav style="background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <span style="color: white; font-weight: bold; font-size: 1.2em; margin-right: auto;">Market Data POS</span>
+        <a href="/pos/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #007bff; border-radius: 5px;">🛒 Ventas</a>
+        <a href="/recaudacion/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #17a2b8; border-radius: 5px;">💰 Fiados</a>
+        <a href="/caja/cierre/" style="color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; background-color: #dc3545; border-radius: 5px;">🔒 Cerrar Caja</a>
+    </nav>
+    <div class="contenedor">
+        <h1>Terminal de Ventas</h1>        
+        <div style="position: relative;">
+            <input type="text" id="input-buscador" class="buscador" placeholder="Escanee código o busque producto por nombre..." autofocus autocomplete="off">
+            <div id="resultados-busqueda" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; z-index: 1000; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 4px;"></div>
+        </div>        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Detalle de Venta</h3>
+            <button onclick="fiarTodo()" style="padding: 10px; cursor: pointer;">Fiar Todo / Desmarcar</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Precio Unit.</th>
+                    <th>Cantidad/Peso</th>
+                    <th>Subtotal</th>
+                    <th>¿Fiado?</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="cuerpo-carrito"></tbody>
+        </table>
+        <div id="panel-cliente" class="panel-cliente">
+            <h3>Datos para Cobro de Fiado</h3>
+            <input type="text" id="cliente-rut" placeholder="RUT Cliente" style="padding: 8px; margin-right: 10px;">
+            <input type="text" id="cliente-nombre" placeholder="Nombre" style="padding: 8px; margin-right: 10px;">
+            <input type="text" id="cliente-apellido" placeholder="Apellido" style="padding: 8px;">
+        </div>
+        <div id="zona-estado" class="estado-transaccion"></div>
+        <div class="panel-totales">
+            <div>Subtotal: $<span id="total-subtotal">0</span></div>
+            <div>Neto: $<span id="total-neto">0</span></div>
+            <div>IVA: $<span id="total-iva">0</span></div>
+            <div style="font-size: 1.8em; font-weight: bold;">Total: $<span id="total-pagar">0</span></div>
+            <button class="btn-cobrar" id="btn-cobrar">Confirmar Venta</button>
+        </div>
+    </div>
+
+    <script>
+        let carrito = [];
+        const idUsuarioActual = parseInt("{{ request.session.id_usuario|default:'0' }}");
+        const rutTiendaActual = "{{ request.session.rut_tienda|default:'' }}";
+        const inputBuscador = document.getElementById('input-buscador');
+        const divResultados = document.getElementById('resultados-busqueda');
+        const cuerpoCarrito = document.getElementById('cuerpo-carrito');
+        const zonaEstado = document.getElementById('zona-estado');
+        const btnCobrar = document.getElementById('btn-cobrar');
+        let timeoutBuscador = null;
+
+        function mostrarMensaje(texto, tipo) {
+            zonaEstado.textContent = texto;
+            zonaEstado.className = `estado-transaccion ${tipo}`;
+            zonaEstado.style.display = 'block';
+            setTimeout(() => { zonaEstado.style.display = 'none'; }, 5000);
+        }
+        // 1 MOTOR DEL LECTOR DE CODIGOS DE BARRA (Enter)
+        inputBuscador.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const codigo = inputBuscador.value.trim();
+                if (!codigo) return;
+                divResultados.style.display = 'none';
+                const res = await fetch(`/api/producto/buscar/?codigo=${codigo}&rut_tienda=${rutTiendaActual}`, {
+                    method: 'GET',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    }
+                });
+                const datos = await res.json();                
+                if (res.status === 404) {
+                    agregarAlCarrito({ codigo, descripcion: "Producto no encontrado", precio_venta: 0, esManual: true, fiado: false });
+                } else if (res.ok) {
+                    datos.fiado = false;
+                    //activar ingreso de precio si viene en 0
+                    if (datos.precio_venta === 0 || datos.precio_venta === null) {
+                        datos.esManual = true;
+                    } else {
+                        datos.esManual = false;
+                    }
+                    agregarAlCarrito(datos);
+                }
+                inputBuscador.value = '';
+            }
+        });
+        //2 MOTOR DEL BUSCADOR PREDICTIVO (Texto)
+        inputBuscador.addEventListener('input', function() {
+            clearTimeout(timeoutBuscador);
+            const query = this.value.trim();
+            if (query.length < 3) {
+                divResultados.style.display = 'none';
+                return;
+            }
+            timeoutBuscador = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/productos/buscar/?q=${encodeURIComponent(query)}&rut_tienda=${rutTiendaActual}`, {
+                        method: 'GET',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'
+                        }
+                    });
+                    const data = await res.json();                    
+                    divResultados.innerHTML = '';
+                    if (data.length > 0) {
+                        data.forEach(p => {
+                            const div = document.createElement('div');
+                            div.style.padding = '10px';
+                            div.style.cursor = 'pointer';
+                            div.style.borderBottom = '1px solid #eee';                            
+                            let alerta = p.stock_disponible <= 0 ? " 🔴 (Sin Stock)" : "";
+                            div.textContent = `${p.descripcion} - $${p.precio_venta}${alerta}`;                            
+                            div.addEventListener('click', () => {
+                                agregarAlCarrito({
+                                    codigo: p.cod_barra,
+                                    descripcion: p.descripcion,
+                                    precio_venta: p.precio_venta,
+                                    // evaluacion si necesita precio manual
+                                    esManual: (p.precio_venta === 0 || p.precio_venta === null), 
+                                    fiado: false
+                                });
+                                inputBuscador.value = '';
+                                divResultados.style.display = 'none';
+                                inputBuscador.focus();
+                            });                            
+                            div.addEventListener('mouseover', () => div.style.background = '#f8f9fa');
+                            div.addEventListener('mouseout', () => div.style.background = 'white');
+                            divResultados.appendChild(div);
+                        });
+                        divResultados.style.display = 'block';
+                    } else {
+                        divResultados.innerHTML = '<div style="padding: 10px; color: #6c757d;">No encontrado</div>';
+                        divResultados.style.display = 'block';
+                    }
+                } catch (e) {
+                    console.error("Error buscando:", e);
+                }
+            }, 300); 
+        });
+        //ocultar resultados si hace clic fuera del buscador o resultados
+        document.addEventListener('click', (e) => {
+            if (e.target !== inputBuscador && e.target !== divResultados) {
+                divResultados.style.display = 'none';
+            }
+        });
+        //3 MATEMATICA PARA GRANEL Y CARRITO
+        function agregarAlCarrito(p) {
+            const idx = carrito.findIndex(i => i.codigo === p.codigo);
+            let requiereFoco = false;
+            if (idx !== -1) {
+                carrito[idx].cantidad++;
+                //multiplicación decimal + redondeo para evitar errores de punto flotante
+                carrito[idx].subtotal = Math.round(carrito[idx].cantidad * carrito[idx].precio_venta);
+            } else {
+                carrito.push({...p, cantidad: 1, subtotal: p.precio_venta});
+                if (p.esManual) requiereFoco = true;
+            }
+            renderizar();            
+            if (requiereFoco) {
+                const nuevoInput = document.getElementById(`input-manual-${p.codigo}`);
+                if (nuevoInput) nuevoInput.focus();
+            }
+        }
+        //función para pesos decimales en la caja, con actualización en tiempo real al modificar cantidad o precio
+        function actualizarCantidad(codigo, valor) {
+            const idx = carrito.findIndex(i => i.codigo === codigo);
+            carrito[idx].cantidad = parseFloat(valor) || 0; // Permite decimales
+            carrito[idx].subtotal = Math.round(carrito[idx].cantidad * carrito[idx].precio_venta);
+            document.getElementById(`subtotal-${codigo}`).textContent = carrito[idx].subtotal;
+            calcularTotales();
+        }
+
+        function actualizarPrecio(codigo, valor) {
+            const idx = carrito.findIndex(i => i.codigo === codigo);
+            carrito[idx].precio_venta = parseInt(valor) || 0;
+            carrito[idx].subtotal = Math.round(carrito[idx].cantidad * carrito[idx].precio_venta);
+            document.getElementById(`subtotal-${codigo}`).textContent = carrito[idx].subtotal;
+            calcularTotales();
+        }
+
+        function toggleFiado(codigo) {
+            const idx = carrito.findIndex(i => i.codigo === codigo);
+            carrito[idx].fiado = !carrito[idx].fiado;
+            renderizar();
+        }
+
+        function fiarTodo() {
+            const algunNoFiado = carrito.some(i => !i.fiado);
+            carrito.forEach(i => i.fiado = algunNoFiado);
+            renderizar();
+        }
+        
+        function eliminarFila(codigo) {
+            carrito = carrito.filter(i => i.codigo !== codigo);
+            renderizar();
+        }
+
+        function renderizar() {
+            cuerpoCarrito.innerHTML = '';
+            document.getElementById('panel-cliente').style.display = carrito.some(i => i.fiado) ? 'block' : 'none';
+            
+            carrito.forEach(item => {
+                const fila = document.createElement('tr');
+                if (item.fiado) fila.className = 'fila-fiada';                
+                let valorMostrado = item.precio_venta === 0 ? '' : item.precio_venta;                
+                let precioHtml = item.esManual ? 
+                    `<input type="number" id="input-manual-${item.codigo}" class="input-precio-manual" oninput="actualizarPrecio('${item.codigo}', this.value)" value="${valorMostrado}" placeholder="Monto $" style="width: 90px; padding: 5px;">` : 
+                    `$${item.precio_venta}`;
+                //campo de Cantidad step="0.01" para granel
+                let cantidadHtml = `<input type="number" step="0.01" value="${item.cantidad}" oninput="actualizarCantidad('${item.codigo}', this.value)" style="width: 70px; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">`;
+                fila.innerHTML = `
+                    <td>${item.codigo}</td>
+                    <td>${item.descripcion}</td>
+                    <td>${precioHtml}</td>
+                    <td>${cantidadHtml}</td>
+                    <td>$<span id="subtotal-${item.codigo}">${item.subtotal}</span></td>
+                    <td style="text-align: center;"><input type="checkbox" style="transform: scale(1.5);" ${item.fiado ? 'checked' : ''} onchange="toggleFiado('${item.codigo}')"></td>
+                    <td style="text-align: center;"><button onclick="eliminarFila('${item.codigo}')" style="color:red; border:none; background:none; cursor:pointer; font-weight: bold;">✖</button></td>
+                `;
+                cuerpoCarrito.appendChild(fila);
+            });
+            calcularTotales();
+        }
+
+        function calcularTotales() {
+            const total = carrito.filter(i => !i.fiado).reduce((s, i) => s + i.subtotal, 0);
+            const neto = Math.round(total / 1.19);
+            document.getElementById('total-subtotal').textContent = total;
+            document.getElementById('total-neto').textContent = neto;
+            document.getElementById('total-iva').textContent = total - neto;
+            document.getElementById('total-pagar').textContent = total;
+        }
+        //4 TRANSACCIÓN FINAL
+        btnCobrar.addEventListener('click', async () => {
+            if (carrito.length === 0) return;
+            if (carrito.some(item => item.precio_venta <= 0)) {
+                return mostrarMensaje("Hay productos con precio inválido o vacío. Ingrese el monto antes de confirmar.", "error");
+            }
+            if (carrito.some(item => item.cantidad <= 0)) {
+                return mostrarMensaje("Existen productos con cantidad cero en la boleta. Ajuste el peso o elimine la fila.", "error");
+            }
+            const fiados = carrito.filter(i => i.fiado);
+            let cliente = null;
+            if (fiados.length > 0) {
+                cliente = {
+                    rut: document.getElementById('cliente-rut').value,
+                    nombre: document.getElementById('cliente-nombre').value,
+                    apellido: document.getElementById('cliente-apellido').value
+                };
+                if (!cliente.rut || !cliente.nombre) return mostrarMensaje("Faltan datos obligatorios del cliente fiado", "error");
+            }
+            const payload = {
+                rut_tienda: rutTiendaActual,
+                id_usuario: idUsuarioActual,
+                carrito_pagado: carrito.filter(i => !i.fiado),
+                carrito_fiado: fiados,
+                cliente: cliente,
+                total_bruto_pagado: parseInt(document.getElementById('total-pagar').textContent)
+            };
+            try {
+                const res = await fetch('/api/venta/registrar/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });                
+                if (res.ok) {
+                    mostrarMensaje("Venta procesada con éxito", "exito");
+                    carrito = [];
+                    renderizar();
+                    document.getElementById('cliente-rut').value = '';
+                    document.getElementById('cliente-nombre').value = '';
+                    document.getElementById('cliente-apellido').value = '';
+                } else {
+                    const error = await res.json();
+                    mostrarMensaje("Error: " + error.error, "error");
+                }
+            } catch (e) {
+                mostrarMensaje("Error de red o de base de datos", "error");
+            }
+        });
+        //5 AUTOCOMPLETADO DE CLIENTE FIADO
+        document.getElementById('cliente-rut').addEventListener('blur', function() {
+            const rut = this.value.trim();            
+            if (rut.length > 0) {
+                fetch(`/api/cliente/buscar/?rut=${rut}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const inputNombre = document.getElementById('cliente-nombre');
+                        const inputApellido = document.getElementById('cliente-apellido');
+                        if (data.existe) {
+                            // Si existe se autocompleta el nombre y apellido, pero se deja el RUT para que el cajero pueda modificarlo si es necesario (ej. error de tipeo o cliente nuevo con mismo RUT)
+                            inputNombre.value = data.nombre;
+                            inputApellido.value = data.apellido;                            
+                            console.log("Cliente encontrado y autocompletado.");
+                        } else {
+                            // Si no existe, se deja para que el cajero ingrese manualmente y se registra al finalizar la venta
+                            inputNombre.value = '';
+                            inputApellido.value = '';                            
+                            console.log("Cliente nuevo, proceda al registro manual.");
+                        }
+                    })
+                    .catch(error => console.error('Error en la búsqueda del cliente:', error));
+            }
+        });
+    </script>
+</body>
+</html>

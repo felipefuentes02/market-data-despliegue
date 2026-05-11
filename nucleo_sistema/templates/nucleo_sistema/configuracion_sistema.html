@@ -1,0 +1,199 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Configuración de Sistema - Market Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .navbar { background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); align-items: center; border-radius: 5px; }
+        .navbar span { color: white; font-weight: bold; font-size: 1.2em; margin-right: auto; }
+        .navbar a { color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; border-radius: 5px; background-color: #6c757d; }
+        .contenedor { max-width: 1200px; margin: auto; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }        
+        .panel { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .panel h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        .grupo-input { margin-bottom: 15px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #495057; font-size: 0.9em; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
+        .btn-guardar { background-color: #007bff; color: white; padding: 12px; font-size: 1em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        .btn-reset { background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: bold; }
+        .btn-bloquear { background-color: #6c757d; }
+        .btn-desbloquear { background-color: #28a745; }        
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #f8f9fa; color: #495057; }
+        .rol-admin { color: #007bff; font-weight: bold; }
+        .rol-vend { color: #28a745; font-weight: bold; }
+        .modal-fondo { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 2000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+        .modal-caja { background: white; padding: 25px; border-radius: 8px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-caja h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .btn-cancelar { background-color: #6c757d; color: white; padding: 12px; font-size: 1em; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .acciones-modal { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .alerta { padding: 15px; border-radius: 5px; margin-bottom: 20px; font-size: 0.95em; border: 1px solid transparent; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .alerta-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+        .alerta-error { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span>⚙️ Configuración y Accesos</span>
+        <a href="/dashboard/">⬅️ Volver al Panel</a>
+    </nav>
+    <div class="contenedor">
+        <div class="panel">
+            <h3>Crear Nuevo Usuario</h3>
+            {% if messages %}
+                <div style="margin-bottom: 20px;">
+                    {% for message in messages %}
+                        <div class="alerta {% if 'error' in message.tags %}alerta-error{% else %}alerta-success{% endif %}">
+                            <strong>{% if 'error' in message.tags %}❌ Error:{% else %}✅ Éxito:{% endif %}</strong> {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <form method="POST" action="{% url 'registrar_usuario' %}">
+                {% csrf_token %}                
+                <div class="grupo-input">
+                    <label>Nombre</label>
+                    <input type="text" name="nombre" required autocomplete="off">
+                </div>                
+                <div class="grid-2">
+                    <div class="grupo-input">
+                        <label>Primer Apellido</label>
+                        <input type="text" name="primer_apellido" required autocomplete="off">
+                    </div>
+                    <div class="grupo-input">
+                        <label>Segundo Apellido</label>
+                        <input type="text" name="segundo_apellido" required autocomplete="off">
+                    </div>
+                </div>
+                <div class="grupo-input">
+                    <label>Correo Electrónico</label>
+                    <input type="email" name="mail" placeholder="usuario@almacen.cl" required pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$" title="Debe ingresar un formato válido. Ej: nombre@empresa.cl" autocomplete="off">
+                </div>
+                <div class="grid-2">
+                    <div class="grupo-input">
+                        <label>Nivel de Acceso (Rol)</label>
+                        <select name="rol" required>
+                            <option value="" selected disabled>-- Seleccione un Rol --</option>
+                            <option value="Vendedor">Vendedor</option>
+                            <option value="Administrador">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="grupo-input">
+                        <label>Clave Inicial</label>
+                        <input type="text" name="password" placeholder="Asigne una clave" required autocomplete="off">
+                    </div>
+                </div>
+                <button type="submit" class="btn-guardar">Registrar Empleado</button>
+            </form>
+        </div>
+        <div class="panel">
+            <h3>Directorio de Personal</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre Completo</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th>Seguridad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td>{{ u.nombre_usuario }}</td>
+                        <td>{{ u.nombre }} {{ u.primer_apellido }}</td>
+                        <td class="{% if u.rol == 'Administrador' %}rol-admin{% else %}rol-vend{% endif %}">
+                            {{ u.rol }}
+                        </td>
+                        <td>{% if u.es_activo %}🟢 Activo{% else %}🔴 Inactivo{% endif %}</td>
+                        <td style="display: flex; gap: 5px;">
+                            <button class="btn-reset" onclick="confirmarReseteo('{{ u.id_usuario }}', '{{ u.nombre_usuario }}')">🔑 Reset Clave</button>
+                            
+                            <button class="btn-reset {% if u.es_activo %}btn-bloquear{% else %}btn-desbloquear{% endif %}" 
+                                    onclick="cambiarEstado('{{ u.id_usuario }}', '{{ u.nombre_usuario }}', '{{ u.es_activo }}')">
+                                {% if u.es_activo %}🚫 Bloquear{% else %}✅ Desbloquear{% endif %}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 1 mostrar modal de confirmación para resetear clave
+        function confirmarReseteo(idUsuario, nombreUsuario) {
+            document.getElementById('modal-usuario-nombre').textContent = nombreUsuario;
+            document.getElementById('modal-id-usuario').value = idUsuario;
+            document.getElementById('modal-nueva-clave').value = '';
+            document.getElementById('modal-clave').style.display = 'flex'; 
+            document.getElementById('modal-nueva-clave').focus();
+        }
+        //2 ocultar modal
+        function cerrarModal() {
+            document.getElementById('modal-clave').style.display = 'none';
+        }
+        //3 envio a postgres para actualizar la clave
+        async function procesarCambioClave() {
+            const idUsuario = document.getElementById('modal-id-usuario').value;
+            const nuevaClave = document.getElementById('modal-nueva-clave').value.trim();
+            if (nuevaClave.length < 5) {
+                return alert("Seguridad: La clave debe tener al menos 5 caracteres.");
+            }
+            try {
+                const res = await fetch('/api/usuarios/reset-clave/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_usuario: idUsuario, nueva_clave: nuevaClave })
+                });
+                if (res.ok) {
+                    alert("Éxito: Contraseña actualizada correctamente.");
+                    cerrarModal();
+                } else {
+                    alert("Error interno al intentar actualizar la clave.");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        async function cambiarEstado(idUsuario, nombreUsuario, estadoActual) {
+            const accion = estadoActual === 'True' ? 'bloquear' : 'desbloquear';            
+            if (!confirm(`¿Está seguro que desea ${accion} el acceso al usuario ${nombreUsuario}?`)) return;
+            try {
+                const res = await fetch('/api/usuarios/cambiar-estado/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_usuario: idUsuario })
+                });
+                if (res.ok) {
+                    window.location.reload(); // Recargamos para ver el cambio de estado en la tabla
+                } else {
+                    const data = await res.json();
+                    alert(data.error || "Error interno al intentar cambiar el estado.");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
+    <div id="modal-clave" class="modal-fondo">
+        <div class="modal-caja">
+            <h3>🔑 Restablecer Contraseña</h3>
+            <p style="color: #495057; font-size: 0.9em;">Ingrese la nueva clave temporal para el usuario <strong id="modal-usuario-nombre" style="color: #007bff;"></strong>:</p>            
+            <input type="hidden" id="modal-id-usuario">
+            <input type="text" id="modal-nueva-clave" placeholder="Mínimo 5 caracteres" autocomplete="off" required>            
+            <div class="acciones-modal">
+                <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn-guardar" style="margin-top: 0;" onclick="procesarCambioClave()">Guardar Clave</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

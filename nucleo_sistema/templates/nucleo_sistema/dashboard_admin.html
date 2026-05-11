@@ -1,0 +1,193 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Panel de Administración - Market Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .navbar { background-color: #343a40; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); align-items: center; border-radius: 5px; }
+        .navbar span { color: white; font-weight: bold; font-size: 1.2em; margin-right: auto; }
+        .navbar a { color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; border-radius: 5px; transition: background 0.3s; }
+        .btn-logout { background-color: #dc3545; }
+        .contenedor { max-width: 1200px; margin: auto; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
+        .kpi-card { padding: 20px; border-radius: 8px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .kpi-card h3 { margin: 0 0 10px 0; font-size: 1.1em; font-weight: normal; opacity: 0.9; }
+        .kpi-card h2 { margin: 0; font-size: 2em; }
+        .bg-ventas { background-color: #28a745; }
+        .bg-fiados { background-color: #ffc107; color: #343a40 !important; }
+        .bg-facturas { background-color: #17a2b8; }
+        .bg-stock { background-color: #6f42c1; }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        .chart-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .chart-container h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.1em; }
+        .canvas-wrapper { position: relative; height: 300px; width: 100%; }
+        .modulos-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .tarjeta-modulo { background: white; padding: 25px; border-radius: 8px; border: 1px solid #dee2e6; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .tarjeta-modulo h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .tarjeta-modulo p { color: #6c757d; font-size: 0.95em; margin-bottom: 20px; height: 40px; }
+        .btn-modulo { display: inline-block; background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold; }
+        .btn-modulo.disabled { background-color: #6c757d; cursor: not-allowed; opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span>Market Data - Gerencia</span>
+        <span style="font-size: 0.9em; font-weight: normal; color: #adb5bd;">📍 {{ nombre_tienda }} - {{ comuna_tienda }}</span>
+        <a href="/logout/" class="btn-logout">🚪 Cerrar Sesión</a>
+    </nav>
+    <div class="contenedor">
+        <h2 style="color: #343a40; margin-bottom: 20px;">Resumen Operativo</h2>        
+        <div class="kpi-grid">
+            <div class="kpi-card bg-ventas">
+                <h3>Ventas del Día</h3>
+                <h2>${{ kpi_ventas_dia|default:"0" }}</h2>
+            </div>
+            <div class="kpi-card bg-fiados">
+                <h3>Total Fiados Activos</h3>
+                <h2>${{ kpi_fiados_activos|default:"0" }}</h2>
+            </div>
+            <div class="kpi-card bg-facturas">
+                <h3>Facturas Ingresadas (Mes)</h3>
+                <h2>{{ kpi_facturas_mes|default:"0" }}</h2>
+            </div>
+            <div class="kpi-card bg-stock">
+                <h3>Valor Inventario Total</h3>
+                <h2>${{ kpi_valor_inventario|default:"0" }}</h2>
+            </div>
+        </div> <div class="chart-grid">
+            <div class="chart-container">
+                <h3>📊 Tendencia de Ventas (Últimos 7 Días)</h3>
+                <div class="canvas-wrapper">
+                    <canvas id="graficoVentas"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #eaeaea; width: 100%; box-sizing: border-box;">    
+                    <h4 style="margin-top: 0; margin-bottom: 20px; font-size: 1.1em; color: #333; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px;">
+                        🍩 Ranking de Ventas (Top 5 Categorías)
+                    </h4>                    
+                    <div style="position: relative; height: 300px; width: 100%;">
+                        <canvas id="graficoDona"></canvas>
+                    </div>                    
+                </div>
+            </div>
+        </div>
+        <div class="modulos-grid">
+            <div class="tarjeta-modulo">
+                <h3>📦 1. Gestión de Productos</h3>
+                <p>Catálogo total de productos. Creación de nuevos productos y asignación de precio sugerido.</p>
+                <a href="/dashboard/productos/" class="btn-modulo">Ingresar al Módulo</a>
+            </div>
+            <div class="tarjeta-modulo">
+                <h3>🚚 2. Control de Abastecimiento</h3>
+                <p>Ingreso de facturas de proveedores, actualización de costos y reposición de stock.</p>
+                <a href="/dashboard/abastecimiento/" class="btn-modulo">Ingresar al Módulo</a>
+            </div>
+            <div class="tarjeta-modulo">
+                <h3>⚖️ 3. Inventario y Ajustes</h3>
+                <p>Revisión del inventario actualizado y declaración de mermas, robos, consumo interno y correcciones de ingresos erróneos.</p>
+                <a href="/dashboard/ajustes/" class="btn-modulo">Ingresar al Módulo</a>
+            </div>
+            <div class="tarjeta-modulo">
+                <h3>⚙️ 4. Configuración del Sistema</h3>
+                <p>Creación de cajeros, administradores, restablecimiento de contraseñas y bloqueo de acceso.</p>
+                <a href="/dashboard/configuracion/" class="btn-modulo">Ingresar al Módulo</a>
+            </div>
+            <div class="tarjeta-modulo">
+                <h3>📈 5. Reportes y Analítica</h3>
+                <p>Cálculo de utilidades netas, ranking de productos más vendidos y exploración de datos.</p>
+                <a href="/dashboard/reportes/" class="btn-modulo">Ingresar al Módulo</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 1 cargar datos JSON desde las variables del template de Django
+        const etiquetasVentas = JSON.parse('{{ chart_labels|escapejs }}');
+        const datosVentas = JSON.parse('{{ chart_data|escapejs }}');
+        const etiquetasDona = JSON.parse('{{ donut_labels|escapejs }}');
+        const datosDona = JSON.parse('{{ donut_data|escapejs }}');
+        //GRÁFICO 1 TENDENCIA DE VENTAS
+        const canvasVentas = document.getElementById('graficoVentas');
+        if (canvasVentas) {
+            const ctxVentas = canvasVentas.getContext('2d');
+            new Chart(ctxVentas, {
+                type: 'bar',
+                data: {
+                    labels: etiquetasVentas,
+                    datasets: [{
+                        label: 'Ingresos Brutos ($)',
+                        data: datosVentas,
+                        backgroundColor: 'rgba(40, 167, 69, 0.7)', // verde
+                        borderColor: 'rgba(40, 167, 69, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { 
+                                callback: function(value) { 
+                                    return '$' + value.toLocaleString('es-CL'); 
+                                } 
+                            }
+                        }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        } else {
+            console.warn("No se encontró el canvas con id 'graficoVentas'");
+        }
+        //GRÁFICO 2 TOP 5 CATEGORÍAS DE VENTAS
+        const canvasDona = document.getElementById('graficoDona');
+        if (canvasDona) {
+            const ctxDona = canvasDona.getContext('2d');
+            new Chart(ctxDona, {
+                type: 'doughnut',
+                data: {
+                    labels: etiquetasDona,
+                    datasets: [{
+                        data: datosDona,
+                        backgroundColor: [
+                            '#28a745', //verde
+                            '#4d80ff', // azul
+                            '#ffd24d', //amarillo
+                            '#9966ff', //morado
+                            '#ff66a3'  //rosado
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    let value = context.parsed || 0;
+                                    return label + ': $' + value.toLocaleString('es-CL');
+                                }
+                            }
+                        }
+                    },
+                    cutout: '65%'
+                }
+            });
+        }
+    });
+</script>
+</body>
+</html>

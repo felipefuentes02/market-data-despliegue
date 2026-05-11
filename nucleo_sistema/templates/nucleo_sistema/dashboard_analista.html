@@ -1,0 +1,275 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Consola Analítica - Market Data</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .navbar { background-color: #1a252f; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); align-items: center; border-radius: 5px; }
+        .navbar span { color: white; font-weight: bold; font-size: 1.2em; margin-right: auto; }
+        .navbar a { color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; border-radius: 5px; background-color: #dc3545; transition: background 0.3s; }
+        .contenedor { max-width: 1400px; margin: auto; }
+        .tarjeta { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #eaeaea; margin-bottom: 20px; }
+        .tarjeta h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.1em; }        
+        .grid-graficos-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .grid-graficos-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }        
+        .btn-accion { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; width: 100%; display: flex; align-items: center; justify-content: center;}
+        .btn-filtrar { background-color: #007bff; }
+        .btn-exportar { background-color: #198754; font-size: 0.9em; height: 35px; }
+        .fila-alto { background-color: #fff3cd !important; }
+        .fila-valle { background-color: #f8f9fa !important; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span>🌐 Market Data - Centro de Inteligencia Global</span>
+        <span style="font-size: 0.9em; font-weight: normal; color: #adb5bd;">Rol: Analista de Datos</span>
+        <a href="/logout/">🚪 Cerrar Sesión</a>
+    </nav>
+    <div class="contenedor">
+        <div class="tarjeta" style="border-left: 5px solid #007bff;">
+            <h3 style="border-bottom: none; margin-bottom: 15px;">⚙️ Parametrización del Análisis</h3>
+            <form method="GET" action="" id="formAnalista">
+                <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr auto; gap: 15px; align-items: start;">                    
+                    <div>
+                        <label style="font-size: 0.85em; font-weight: bold; color: #555; display: flex; justify-content: space-between;">
+                            Regiones <span><input type="checkbox" id="todos_regiones"> <small>Todos</small></span>
+                        </label>
+                        <div id="lista-regiones" style="height: 120px; border: 1px solid #ccc; border-radius: 4px; overflow-y: auto; background: #fff; padding: 5px;">
+                            {% for region in regiones %}
+                            <label style="display: block; font-size: 0.85em; cursor: pointer; padding: 2px 0;">
+                                <input type="checkbox" name="regiones" value="{{ region }}" class="chk-region" {% if region in regiones_seleccionadas %}checked{% endif %}> {{ region }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.85em; font-weight: bold; color: #555; display: flex; justify-content: space-between;">
+                            Comunas <span><input type="checkbox" id="todos_comunas"> <small>Todos</small></span>
+                        </label>
+                        <div id="lista-comunas" style="height: 120px; border: 1px solid #ccc; border-radius: 4px; overflow-y: auto; background: #fff; padding: 5px;">
+                            {% for comuna in comunas %}
+                            <label class="item-comuna" data-region="{{ comuna.region }}" style="display: block; font-size: 0.85em; cursor: pointer; padding: 2px 0;">
+                                <input type="checkbox" name="comunas" value="{{ comuna.id_comuna }}" class="chk-comuna" {% if comuna.id_comuna|stringformat:"i" in comunas_seleccionadas %}checked{% endif %}> {{ comuna.nombre_comuna }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.85em; font-weight: bold; color: #555; display: flex; justify-content: space-between;">
+                            Tiendas <span><input type="checkbox" id="todos_tiendas"> <small>Todos</small></span>
+                        </label>
+                        <div id="lista-tiendas" style="height: 120px; border: 1px solid #ccc; border-radius: 4px; overflow-y: auto; background: #fff; padding: 5px;">
+                            {% for tienda in tiendas %}
+                            <label class="item-tienda" data-comuna="{% if tienda.id_comuna_id %}{{ tienda.id_comuna_id }}{% else %}{{ tienda.id_comuna }}{% endif %}" style="display: block; font-size: 0.85em; cursor: pointer; padding: 2px 0;">
+                                <input type="checkbox" name="tiendas" value="{{ tienda.rut_tienda }}" class="chk-tienda" {% if tienda.rut_tienda in tiendas_seleccionadas %}checked{% endif %}> {{ tienda.nombre }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                        <div>
+                            <label style="font-size: 0.85em; font-weight: bold; color: #555;">Desde</label>
+                            <input type="date" name="fecha_inicio" value="{{ fecha_inicio }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                        <div>
+                            <label style="font-size: 0.85em; font-weight: bold; color: #555;">Hasta</label>
+                            <input type="date" name="fecha_fin" value="{{ fecha_fin }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 15px;">
+                        <button type="submit" class="btn-accion btn-filtrar" style="height: 50px; font-size: 1.1em;">🚀 Analizar</button>
+                        <button type="submit" name="exportar" value="csv" class="btn-accion btn-exportar">📥 Descargar CSV</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {% if total_ingresos %}        
+        <div class="tarjeta" style="border-top: 5px solid #6610f2;">
+            <h3>📈 Comparativa de Ventas por Tipo de Local ($)</h3>
+            <div style="position: relative; height: 350px; width: 100%;">
+                <canvas id="graficoMultiLinea"></canvas>
+            </div>
+        </div>
+        <div class="grid-graficos-2">
+            <div class="tarjeta">
+                <h3>🏭 Fabricantes con Mayor Impacto en Ventas ($)</h3>
+                <div style="position: relative; height: 300px; width: 100%;">
+                    <canvas id="graficoBarras"></canvas>
+                </div>
+            </div>            
+            <div class="tarjeta">
+                <h3>📄 Origen de Abastecimiento</h3>
+                <div style="position: relative; height: 300px; width: 100%;">
+                    <canvas id="graficoDona"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="grid-graficos-3">
+            <div class="tarjeta" style="border-top: 5px solid #fd7e14; margin-bottom: 0;">
+                <h3>🏷️ Top Marcas (Unidades)</h3>
+                <div style="position: relative; height: 350px; width: 100%;">
+                    <canvas id="graficoMarcas"></canvas>
+                </div>
+            </div>            
+            <div class="tarjeta" style="border-top: 5px solid #20c997; padding-right: 5px; margin-bottom: 0;">
+                <h3 style="margin-bottom: 15px;">⏱️ Mapa de Tráfico Horario</h3>
+                <div style="max-height: 350px; overflow-y: auto; padding-right: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid #ddd; color: #555;">
+                                <th style="padding: 10px; text-align: left; position: sticky; top: 0; background: white;">Rango</th>
+                                <th style="padding: 10px; text-align: center; position: sticky; top: 0; background: white;">Ventas</th>
+                                <th style="padding: 10px; text-align: right; position: sticky; top: 0; background: white;">Impacto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for h in tabla_horas %}
+                            <tr class="{% if h.estado == 'alto' %}fila-alto{% elif h.estado == 'valle' %}fila-valle{% endif %}" style="border-bottom: 1px solid #eee;">
+                                <td style="padding: 10px; font-weight: bold; color: #333;">{{ h.rango }}</td>
+                                <td style="padding: 10px; text-align: center; font-weight: bold;">{{ h.cantidad }}</td>
+                                <td style="padding: 10px; text-align: right;">
+                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+                                        <span style="width: 40px;">{{ h.porcentaje }}%</span>
+                                        <div style="width: 50px; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
+                                            <div style="width: {{ h.porcentaje }}%; height: 100%; background: {% if h.estado == 'alto' %}#dc3545{% elif h.estado == 'valle' %}#6c757d{% else %}#007bff{% endif %};"></div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" style="text-align: center; padding: 20px; color: #999;">Sin datos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="tarjeta" style="border-top: 5px solid #17a2b8; margin-bottom: 0;">
+                <h3>🛒 Top Categorías (Ingresos $)</h3>
+                <div style="position: relative; height: 350px; width: 100%;">
+                    <canvas id="graficoCategorias"></canvas>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="tarjeta" style="display: flex; align-items: center; justify-content: center; height: 300px; border: 2px dashed #dee2e6; color: #6c757d;">
+            <p>Seleccione los parámetros superiores y presione "🚀 Analizar" para cargar el panel interactivo.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script id="data-multi-labels" type="application/json">{{ labels_multilinea|safe|default:"[]" }}</script>
+    <script id="data-multi-datasets" type="application/json">{{ datasets_multilinea|safe|default:"[]" }}</script>
+    <script id="data-barras-labels" type="application/json">{{ labels_barras|safe|default:"[]" }}</script>
+    <script id="data-barras-valores" type="application/json">{{ datos_barras|safe|default:"[]" }}</script>
+    <script id="data-dona-labels" type="application/json">{{ labels_dona|safe|default:"[]" }}</script>
+    <script id="data-dona-valores" type="application/json">{{ datos_dona|safe|default:"[]" }}</script>
+    <script id="data-marcas-labels" type="application/json">{{ labels_marcas|safe|default:"[]" }}</script>
+    <script id="data-marcas-datasets" type="application/json">{{ datasets_marcas|safe|default:"[]" }}</script>
+    <script id="data-cat-labels" type="application/json">{{ labels_categorias|safe|default:"[]" }}</script>
+    <script id="data-cat-valores" type="application/json">{{ datos_categorias|safe|default:"[]" }}</script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            //1 FILTROS EN CASCADA: Regiones -> Comunas -> Tiendas
+            const chkRegiones = document.querySelectorAll('.chk-region');
+            const itemsComunas = document.querySelectorAll('.item-comuna');
+            const chkComunas = document.querySelectorAll('.chk-comuna');
+            const itemsTiendas = document.querySelectorAll('.item-tienda');
+            const chkTiendas = document.querySelectorAll('.chk-tienda');
+            const btnTodosRegiones = document.getElementById('todos_regiones');
+            if (btnTodosRegiones) btnTodosRegiones.addEventListener('change', function() { chkRegiones.forEach(chk => chk.checked = this.checked); actualizarComunas(); });
+            const btnTodosComunas = document.getElementById('todos_comunas');
+            if (btnTodosComunas) btnTodosComunas.addEventListener('change', function() { itemsComunas.forEach(item => { if (item.style.display !== 'none') item.querySelector('input').checked = this.checked; }); actualizarTiendas(); });
+            const btnTodosTiendas = document.getElementById('todos_tiendas');
+            if (btnTodosTiendas) btnTodosTiendas.addEventListener('change', function() { itemsTiendas.forEach(item => { if (item.style.display !== 'none') item.querySelector('input').checked = this.checked; }); });
+
+            function actualizarComunas() {
+                let regsActivas = Array.from(chkRegiones).filter(c => c.checked).map(c => c.value);
+                itemsComunas.forEach(item => {
+                    let pertenece = regsActivas.length === 0 || regsActivas.includes(item.getAttribute('data-region'));
+                    item.style.display = pertenece ? 'block' : 'none';
+                    if (!pertenece) item.querySelector('input').checked = false;
+                });
+                actualizarTiendas();
+            }
+
+            function actualizarTiendas() {
+                let comsActivas = Array.from(chkComunas).filter(c => c.checked).map(c => c.value);
+                let comsVisibles = Array.from(itemsComunas).filter(i => i.style.display !== 'none').map(i => i.querySelector('input').value);
+                itemsTiendas.forEach(item => {
+                    let idComunaTienda = String(item.getAttribute('data-comuna'));
+                    let pertenece = comsActivas.length > 0 ? comsActivas.includes(idComunaTienda) : comsVisibles.includes(idComunaTienda);
+                    item.style.display = pertenece ? 'block' : 'none';
+                    if (!pertenece) item.querySelector('input').checked = false;
+                });
+            }
+            chkRegiones.forEach(chk => chk.addEventListener('change', actualizarComunas));
+            chkComunas.forEach(chk => chk.addEventListener('change', actualizarTiendas));
+            actualizarComunas(); //inicializacion de cascada
+            //2 GRAFICOS (Chart.js)
+            try {
+                //multi-linea (Ventas por Tipo de Local)
+                const labelsMulti = JSON.parse(document.getElementById('data-multi-labels').textContent || '[]');
+                const datasetsMulti = JSON.parse(document.getElementById('data-multi-datasets').textContent || '[]');
+                if (labelsMulti.length > 0) {
+                    new Chart(document.getElementById('graficoMultiLinea'), {
+                        type: 'line',
+                        data: { labels: labelsMulti, datasets: datasetsMulti },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { mode: 'index', intersect: false } }, interaction: { mode: 'nearest', axis: 'x', intersect: false } }
+                    });
+                }
+                //barraas fabricantes
+                const labelsBarras = JSON.parse(document.getElementById('data-barras-labels').textContent || '[]');
+                const datosBarras = JSON.parse(document.getElementById('data-barras-valores').textContent || '[]');
+                if (labelsBarras.length > 0) {
+                    new Chart(document.getElementById('graficoBarras'), {
+                        type: 'bar',
+                        data: { labels: labelsBarras, datasets: [{ label: 'Ingresos ($)', data: datosBarras, backgroundColor: '#007bff', borderRadius: 4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                    });
+                }
+                //dona abastecimiento
+                const labelsDona = JSON.parse(document.getElementById('data-dona-labels').textContent || '[]');
+                const datosDona = JSON.parse(document.getElementById('data-dona-valores').textContent || '[]');
+                const totalFacturas = datosDona.reduce((a, b) => a + b, 0);
+                if (totalFacturas > 0) {
+                    new Chart(document.getElementById('graficoDona'), {
+                        type: 'doughnut',
+                        data: { labels: labelsDona, datasets: [{ data: datosDona, backgroundColor: ['#28a745', '#ffc107'], borderWidth: 0 }] },
+                        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { tooltip: { callbacks: { label: function(c) { return ` ${c.label}: ${Math.round((c.raw/totalFacturas)*100)}% (${c.raw} facturas)`; } } } } }
+                    });
+                }
+                //barras agrupadas marcas
+                const labelsMarcas = JSON.parse(document.getElementById('data-marcas-labels').textContent || '[]');
+                const datasetsMarcas = JSON.parse(document.getElementById('data-marcas-datasets').textContent || '[]');
+                if (labelsMarcas.length > 0) {
+                    new Chart(document.getElementById('graficoMarcas'), {
+                        type: 'bar',
+                        data: { labels: labelsMarcas, datasets: datasetsMarcas },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: false }, y: { beginAtZero: true } } }
+                    });
+                }
+                //barras horizontales-categorias
+                const labelsCat = JSON.parse(document.getElementById('data-cat-labels').textContent || '[]');
+                const datosCat = JSON.parse(document.getElementById('data-cat-valores').textContent || '[]');
+                if (labelsCat.length > 0) {
+                    new Chart(document.getElementById('graficoCategorias'), {
+                        type: 'bar',
+                        data: { labels: labelsCat, datasets: [{ label: 'Ingresos ($)', data: datosCat, backgroundColor: '#17a2b8', borderRadius: 4 }] },
+                        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+                    });
+                }
+            } catch (err) {
+                console.error("Error inicializando analítica visual:", err);
+            }
+        });
+    </script>
+</body>
+</html>

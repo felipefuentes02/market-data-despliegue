@@ -1,0 +1,143 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <title>Gestión de Usuarios - Market Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .navbar { background-color: #1a252f; padding: 15px 20px; margin-bottom: 20px; display: flex; gap: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); align-items: center; border-radius: 5px; }
+        .navbar span { color: white; font-weight: bold; font-size: 1.2em; margin-right: auto; }
+        .navbar a { color: white; text-decoration: none; font-weight: bold; padding: 8px 12px; border-radius: 5px; background-color: #6c757d; }
+        .contenedor { max-width: 1200px; margin: auto; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+        .panel { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .panel h3 { margin-top: 0; color: #343a40; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        .grupo-input { margin-bottom: 15px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #495057; font-size: 0.9em; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
+        .btn-guardar { background-color: #28a745; color: white; padding: 12px; font-size: 1em; border: none; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #f8f9fa; color: #495057; }
+        .alerta { padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 0.95em; border: 1px solid transparent; }
+        .alerta-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+        .alerta-error { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span>👥 Gestión de Accesos - Market Data</span>
+        <a href="/corporativo/">⬅️ Volver al Panel Maestro</a>
+    </nav>
+    <div class="contenedor">
+        <div class="panel">
+            <h3>Creación de Usuarios</h3>
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alerta {% if 'error' in message.tags %}alerta-error{% else %}alerta-success{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+            <form method="POST" action="{% url 'gestion_usuarios_corporativo' %}">
+                {% csrf_token %}
+                <div class="grupo-input">
+                    <label>Nombre</label>
+                    <input type="text" name="nombre" required autocomplete="off">
+                </div>
+                <div class="grid-2">
+                    <div class="grupo-input">
+                        <label>Primer Apellido</label>
+                        <input type="text" name="primer_apellido" required autocomplete="off">
+                    </div>
+                    <div class="grupo-input">
+                        <label>Segundo Apellido</label>
+                        <input type="text" name="segundo_apellido" required autocomplete="off">
+                    </div>
+                </div>
+                <div class="grupo-input">
+                    <label>Correo Electrónico</label>
+                    <input type="email" name="mail" placeholder="usuario@empresa.cl" required autocomplete="off">
+                </div>
+                <div class="grid-2">
+                    <div class="grupo-input">
+                        <label>Nivel de Acceso (Rol)</label>
+                        <select name="rol" id="selector-rol" required>
+                            <option value="" disabled selected>-- Seleccione un Rol --</option>
+                            <option value="Administrador">Administrador de Tienda</option>
+                            <option value="Analista">Analista de Datos</option>
+                        </select>
+                    </div>
+                    <div class="grupo-input">
+                        <label>Clave Temporal</label>
+                        <input type="text" name="password" placeholder="Asigne una clave" required autocomplete="off">
+                    </div>
+                </div>
+                <div class="grupo-input">
+                    <label>Asignar Tienda</label>
+                    <select name="rut_tienda" id="selector-tienda" required>
+                        <option value="" disabled selected>-- Seleccione Tienda --</option>
+                        {% for t in tiendas %}
+                            <option value="{{ t.rut_tienda }}">{{ t.rut_tienda }}   ({{ t.nombre }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn-guardar">Registrar Usuario</button>
+            </form>
+        </div>
+        <div class="panel">
+            <h3>Directorio de Administración y Análisis</h3>
+            <div style="max-height: 600px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Credencial (Usuario)</th>
+                            <th>Nombre</th>
+                            <th>Rol</th>
+                            <th>Sucursal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in usuarios %}
+                        <tr>
+                            <td style="font-weight: bold; color: #007bff;">{{ u.nombre_usuario }}</td>
+                            <td>{{ u.nombre }} {{ u.primer_apellido }}</td>
+                            <td>
+                                {% if u.rol == 'ADMINISTRADOR' %}
+                                    <span style="color: #28a745; font-weight: bold;">{{ u.rol }}</span>
+                                {% else %}
+                                    <span style="color: #6f42c1; font-weight: bold;">{{ u.rol }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{% if u.rut_tienda %}{{ u.rut_tienda.nombre }}{% else %}<span style="color: #6c757d;">Global</span>{% endif %}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: #6c757d; padding: 20px;">No hay personal registrado en este nivel.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // bloqueo de tienda si es rol analista
+        document.getElementById('selector-rol').addEventListener('change', function() {
+            const selectorTienda = document.getElementById('selector-tienda');
+            if (this.value.toUpperCase() === 'ANALISTA') {
+                selectorTienda.value = "";
+                selectorTienda.disabled = true;
+                selectorTienda.required = false;
+            } else {
+                selectorTienda.disabled = false;
+                selectorTienda.required = true;
+            }
+        });
+    </script>
+</body>
+</html>

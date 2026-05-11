@@ -1,0 +1,12 @@
+# Exclusiones del entorno local
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+entorno_virtual/
+venv/
+env/
+.env
+.git
+.gitignore
+db.sqlite3
