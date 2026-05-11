@@ -16,7 +16,7 @@ SECRET_KEY = 'django-insecure-2t&l3app-8ofc5hc4s8_vw+#e3q4fg-17gqys!dolp!#-mp_g^
 DEBUG = False
 
 ALLOWED_HOSTS = ['market-data-servicio.onrender.com', 'localhost', '127.0.0.1']
-CSRF_TRUSTED_ORIGINS = ['https://market-data-ewy0.onrender.com']
+CSRF_TRUSTED_ORIGINS = ['https://market-data-servicio.onrender.com']
 
 
 # Application definition
