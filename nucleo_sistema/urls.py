@@ -1,4 +1,5 @@
 from django.urls import path
+from django.shortcuts import redirect
 from .views import (buscar_producto_por_codigo, registrar_venta, pantalla_pos, consultar_deuda_cliente, registrar_abono,
                     pantalla_recaudacion, abrir_caja, obtener_estado_cuadratura, pantalla_apertura_caja, registrar_cierre,
                     pantalla_cierre_caja, pantalla_login, cerrar_sesion, pantalla_dashboard, pantalla_catalogo,
@@ -47,4 +48,5 @@ urlpatterns = [
     path('corporativo/', pantalla_corporativa, name='pantalla_corporativa'),
     path('corporativo/tiendas/', gestion_tiendas_corporativo, name='gestion_tiendas_corporativo'),
     path('corporativo/usuarios/', gestion_usuarios_corporativo, name='gestion_usuarios_corporativo'),
+    path('', lambda request: redirect('pantalla_login', permanent=False)),
 ]

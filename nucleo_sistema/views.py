@@ -819,36 +819,58 @@ def pantalla_recuperar_password(request):
     #muestra el formulario para ingresar el correo asociado a la cuenta y recibir una clave temporal por correo para recuperar el acceso. Para reforzar la seguridad, se implementa un proceso de verificación que solo envía la clave temporal si el correo ingresado corresponde a un usuario activo con rol de Administrador o Analista, evitando así que cuentas de clientes o usuarios desactivados puedan ser objetivo de este proceso.
     return render(request, 'nucleo_sistema/recuperar_password.html')
 
+import string
+import random
+import os
+import resend
+from django.contrib import messages
+from django.shortcuts import render, redirect
+from django.contrib.auth.hashers import make_password
+from nucleo_sistema.models import Usuario
+
 def procesar_recuperacion(request):
-    #Verifica el correo, valida el rol analíticamente y envía la clave temporal por correo utilizando la API de Resend. Solo accesible para usuarios con rol de Administrador o Analista. Para reforzar la seguridad, se implementa un proceso de verificación que solo envía la clave temporal si el correo ingresado corresponde a un usuario activo con rol de Administrador o Analista, evitando así que cuentas de clientes o usuarios desactivados puedan ser objetivo de este proceso.
     if request.method == 'POST':
-        email_ingresado = request.POST.get('mail', '').strip()        
+        # se cptura el nombre de usuario desde el formulario
+        username_ingresado = request.POST.get('username', '').strip()        
         try:
-            usuario_obj = Usuario.objects.get(mail__iexact=email_ingresado)
-            rol_limpio = usuario_obj.rol.strip().upper()            
-            if rol_limpio in ['ADMINISTRADOR', 'ANALISTA']:
-                caracteres = string.ascii_letters + string.digits
-                clave_temporal = ''.join(random.choice(caracteres) for i in range(8)) #genera clave temporal
+            usuario_obj = Usuario.objects.get(nombre_usuario=username_ingresado)            
+            # regla de negocio solo administradores y analista
+            rol_limpio = usuario_obj.rol.strip().upper()
+            if rol_limpio in ['ADMINISTRADOR', 'ANALISTA']:                
+                caracteres = string.ascii_letters + string.digits #se genera la nueva la nueva clave
+                clave_temporal = ''.join(random.choice(caracteres) for i in range(8))                
                 usuario_obj.password = make_password(clave_temporal)
                 usuario_obj.requiere_cambio_pass = True
                 usuario_obj.save()                
-                resend.api_key = "re_YVqYTPBJ_64NVsPzE2rBWSP5trtg2Z69e"
+                #envio de clave a al correo ingresado
+                resend.api_key = os.environ.get('RESEND_API_KEY', 'TU_LLAVE_AQUI')
                 correo_destino = usuario_obj.mail.strip().lower()                
-                resend.Emails.send({
-                    "from": "onboarding@resend.dev",
-                    "to": correo_destino,
-                    "subject": "Recuperación de Contraseña - Market Data",
-                    "html": f"<p>Hola {usuario_obj.nombre}, tu clave temporal de acceso es: <strong>{clave_temporal}</strong>.</p><p>Por favor, cámbiala al ingresar.</p> <p>Saludos, Market Data </p>"
-                })                
-                messages.success(request, 'Éxito: Se ha enviado una clave temporal a tu correo. Por favor, revisa tu bandeja de entrada o spam.')
+                try:
+                    resend.Emails.send({
+                        "from": "onboarding@resend.dev", 
+                        "to": correo_destino,
+                        "subject": "Recuperación de Contraseña - Market Data",
+                        "html": f"""
+                            <p>Hola {usuario_obj.nombre}, se ha solicitado una recuperación para tu usuario <strong>{usuario_obj.nombre_usuario}</strong>.</p>
+                            <p>Tu clave temporal de acceso es: <strong>{clave_temporal}</strong>.</p>
+                            <p>Por favor, cámbiala al ingresar al sistema.</p>
+                            <p>Saludos,<br>Equipo Market Data</p>
+                        """
+                    })
+                    messages.success(request, 'Éxito: Se ha enviado una clave temporal a tu correo asociado.')
+                except Exception as e:
+                    messages.error(request, 'Ocurrió un problema de conexión al enviar el correo. Contacte a soporte.')
+                    print(f"Error de Resend: {e}")                    
                 return redirect('pantalla_login')                
             else:
+                # si el usuario es cajero
                 return render(request, 'nucleo_sistema/recuperar_password.html', {
-                    'error': 'El correo no coincide con un Administrador o Analista activo.'
+                    'error': 'Este perfil no tiene los privilegios para usar la recuperación automática.'
                 })                
         except Usuario.DoesNotExist:
+            #si el usuario no existe en la bd
             return render(request, 'nucleo_sistema/recuperar_password.html', {
-                'error': 'El correo no coincide con un Administrador o Analista activo.'
+                'error': 'El nombre de usuario ingresado no existe en el sistema.'
             })            
     return redirect('pantalla_login')
 
