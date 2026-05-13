@@ -17,7 +17,7 @@ from django.contrib.auth.hashers import make_password, check_password
 
 @never_cache
 def buscar_producto_por_codigo(request):
-    """ Busca por código exacto, extrayendo el precio exclusivamente del inventario. """
+    #usca por código exacto, extrayendo el precio de inventario o el sugerido de la maestra al agregarlo
     codigo = request.GET.get('codigo', None)
     rut_tienda = request.GET.get('rut_tienda') or request.session.get('rut_tienda')    
     if not codigo:
@@ -25,14 +25,16 @@ def buscar_producto_por_codigo(request):
     try:
         producto = Producto.objects.filter(cod_barra=codigo).first()
         if not producto:
-            return JsonResponse({'error': 'Producto no encontrado'}, status=404)        
+            return JsonResponse({'error': 'Producto no encontrado'}, status=404)         
         existencia = 0
-        precio_final = 0        
+        precio_final = producto.precio_venta        
         if rut_tienda:
             inv = Inventario.objects.filter(cod_barra_id=codigo, rut_tienda_id=rut_tienda).first()
             if inv:
                 existencia = inv.stock_actual
-                precio_final = inv.precio_venta
+                #si el producto tiene un precio en el inventario físico de la tienda, tiene prioridad
+                if inv.precio_venta > 0:
+                    precio_final = inv.precio_venta                    
         datos_respuesta = {
             'codigo': producto.cod_barra,
             'descripcion': producto.descripcion,
@@ -42,8 +44,7 @@ def buscar_producto_por_codigo(request):
             'stock_disponible': existencia
         }
         return JsonResponse(datos_respuesta, status=200)
-    except Exception as error:
-        print(f"🔥 ERROR SILENCIOSO EN CAJA (Lector): {error}")
+    except Exception as error: 
         return JsonResponse({'error': f'Error en la búsqueda: {str(error)}'}, status=500)
     
 @csrf_exempt
@@ -517,37 +518,24 @@ def pantalla_catalogo(request):
     return render(request, 'nucleo_sistema/catalogo_productos.html', contexto)
 
 def registrar_producto(request):
-    #rea el producto en la maestra y lo vincula inmediatamente al inventario de la tienda
+    #toma el POST del formulario y crea el registro en Postgre
     rol_sesion = str(request.session.get('rol', '')).strip().upper()
-    rut_tienda_actual = request.session.get('rut_tienda')    
     if request.method == 'POST' and rol_sesion == 'ADMINISTRADOR':
         try:
-            with transaction.atomic():
-                # 1. Crear el producto en la Maestra Global
-                codigo = request.POST.get('cod_barra')
-                precio_sugerido = int(request.POST.get('precio_venta', 0))
-                
-                nuevo_producto = Producto.objects.create(
-                    cod_barra=codigo,
-                    descripcion=request.POST.get('descripcion'),
-                    volumen=int(request.POST.get('volumen', 0)),
-                    marca=request.POST.get('marca'),
-                    fabricante=request.POST.get('fabricante'),
-                    categoria=request.POST.get('categoria'),
-                    precio_venta=precio_sugerido
-                )                
-                # permite que el producto se pueda ver en caja
-                if rut_tienda_actual:
-                    Inventario.objects.create(
-                        cod_barra=nuevo_producto,
-                        rut_tienda_id=rut_tienda_actual,
-                        stock_actual=0,
-                        precio_venta=precio_sugerido
-                    )                    
-            messages.success(request, f"Producto {codigo} creado y vinculado a la tienda exitosamente.")            
+            #extracción de los datos del POST
+            nuevo_producto = Producto(
+                cod_barra=request.POST.get('cod_barra'),
+                descripcion=request.POST.get('descripcion'),
+                volumen=int(request.POST.get('volumen', 0)),
+                marca=request.POST.get('marca'),
+                fabricante=request.POST.get('fabricante'),
+                categoria=request.POST.get('categoria'),
+                precio_venta=int(request.POST.get('precio_venta', 0))
+            )
+            nuevo_producto.save()            
         except Exception as e:
-            print(f"🔥 ERROR AL REGISTRAR PRODUCTO: {e}")
-            messages.error(request, "Error de integridad: Es posible que el código de barras ya exista.")            
+            print(f"Error al guardar producto: {e}")
+    #redirigir a la misma pantalla para ver la tabla actualizada
     return redirect('pantalla_catalogo')
 
 def pantalla_abastecimiento(request):
