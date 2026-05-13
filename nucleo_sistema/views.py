@@ -517,24 +517,37 @@ def pantalla_catalogo(request):
     return render(request, 'nucleo_sistema/catalogo_productos.html', contexto)
 
 def registrar_producto(request):
-    #toma el POST del formulario y crea el registro en Postgre
+    #rea el producto en la maestra y lo vincula inmediatamente al inventario de la tienda
     rol_sesion = str(request.session.get('rol', '')).strip().upper()
+    rut_tienda_actual = request.session.get('rut_tienda')    
     if request.method == 'POST' and rol_sesion == 'ADMINISTRADOR':
         try:
-            #extracción de los datos del POST
-            nuevo_producto = Producto(
-                cod_barra=request.POST.get('cod_barra'),
-                descripcion=request.POST.get('descripcion'),
-                volumen=int(request.POST.get('volumen', 0)),
-                marca=request.POST.get('marca'),
-                fabricante=request.POST.get('fabricante'),
-                categoria=request.POST.get('categoria'),
-                precio_venta=int(request.POST.get('precio_venta', 0))
-            )
-            nuevo_producto.save()            
+            with transaction.atomic():
+                # 1. Crear el producto en la Maestra Global
+                codigo = request.POST.get('cod_barra')
+                precio_sugerido = int(request.POST.get('precio_venta', 0))
+                
+                nuevo_producto = Producto.objects.create(
+                    cod_barra=codigo,
+                    descripcion=request.POST.get('descripcion'),
+                    volumen=int(request.POST.get('volumen', 0)),
+                    marca=request.POST.get('marca'),
+                    fabricante=request.POST.get('fabricante'),
+                    categoria=request.POST.get('categoria'),
+                    precio_venta=precio_sugerido
+                )                
+                # permite que el producto se pueda ver en caja
+                if rut_tienda_actual:
+                    Inventario.objects.create(
+                        cod_barra=nuevo_producto,
+                        rut_tienda_id=rut_tienda_actual,
+                        stock_actual=0,
+                        precio_venta=precio_sugerido
+                    )                    
+            messages.success(request, f"Producto {codigo} creado y vinculado a la tienda exitosamente.")            
         except Exception as e:
-            print(f"Error al guardar producto: {e}")
-    #redirigir a la misma pantalla para ver la tabla actualizada
+            print(f"🔥 ERROR AL REGISTRAR PRODUCTO: {e}")
+            messages.error(request, "Error de integridad: Es posible que el código de barras ya exista.")            
     return redirect('pantalla_catalogo')
 
 def pantalla_abastecimiento(request):
@@ -843,7 +856,7 @@ def procesar_recuperacion(request):
                 usuario_obj.requiere_cambio_pass = True
                 usuario_obj.save()                
                 #envio de clave a al correo ingresado
-                resend.api_key = os.environ.get('RESEND_API_KEY', 'TU_LLAVE_AQUI')
+                resend.api_key = os.environ.get('RESEND_API_KEY', 're_6JNnrWqP_AV7z2yL2jYXTjibvXu8zkLUu')
                 correo_destino = usuario_obj.mail.strip().lower()                
                 try:
                     resend.Emails.send({
