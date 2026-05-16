@@ -282,7 +282,9 @@
                     nombre: document.getElementById('cliente-nombre').value,
                     apellido: document.getElementById('cliente-apellido').value
                 };
-                if (!cliente.rut || !cliente.nombre) return mostrarMensaje("Faltan datos obligatorios del cliente fiado", "error");
+                if (!cliente.rut || !cliente.nombre || !cliente.apellido) {
+                    return mostrarMensaje("Faltan datos obligatorios del cliente fiado (RUT, Nombre y Apellido)", "error");
+                }
             }
             const payload = {
                 rut_tienda: rutTiendaActual,

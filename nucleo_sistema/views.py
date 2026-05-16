@@ -404,12 +404,12 @@ def pantalla_login(request):
     return render(request, 'nucleo_sistema/login.html')
 
 def pantalla_dashboard(request):
-    #renderiza el panel del aAdministrador y calcula los KPI y gráficos para la tienda del usuario logeado. Solo accesible para Administradores y Analistas.
+    #renderiza el panel del Administrador y calcula los KPI y gráficos para la tienda del usuario logeado. Solo accesible para Administradores y Analistas.
     rol_sesion = str(request.session.get('rol', '')).strip().upper()
     if rol_sesion not in ['ADMINISTRADOR', 'ANALISTA']:
-        return redirect('pantalla_pos')
+        return redirect('pantalla_pos')        
     rut_tienda_actual = request.session.get('rut_tienda')
-    hoy = timezone.now().date()
+    hoy = timezone.now().date()    
     #1 datos geograficos
     nombre_t, comuna_t = "Almacén", "Sucursal"
     try:
@@ -417,11 +417,11 @@ def pantalla_dashboard(request):
         nombre_t = getattr(tienda_obj, 'nombre', "Almacén Central")
         comuna_t = getattr(tienda_obj, 'comuna', "Santiago")
     except:
-        pass
-    #2 cakcula ventas del dia y fiados activos, con candados de tienda para evitar contaminación cruzada entre tiendas en caso de que un cliente compre en varias sucursales o un analista revise varias tiendas
+        pass        
+    #2 calcula ventas del dia y fiados activos, con candados de tienda para evitar contaminación cruzada entre tiendas en caso de que un cliente compre en varias sucursales o un analista revise varias tiendas
     ventas_hoy = Venta.objects.filter(
         rut_tienda=rut_tienda_actual, fecha_venta__date=hoy
-    ).aggregate(total=Sum('total_bruto'))['total'] or 0
+    ).aggregate(total=Sum('total_bruto'))['total'] or 0    
     #sumar todas las compras fiadas históricas de esta tienda
     total_fiado_historico = Venta.objects.filter(
         rut_tienda=rut_tienda_actual, rut_cliente__isnull=False
@@ -430,32 +430,31 @@ def pantalla_dashboard(request):
     total_abonos = AbonoFiado.objects.filter(
         rut_tienda=rut_tienda_actual
     ).aggregate(total=Sum('monto'))['total'] or 0    
-    deuda_viva = max(total_fiado_historico - total_abonos, 0)
-    # 3 INDICADORES de facturas e inventario
-    # Contar facturas ingresadas exactamente en el mes y año actual
+    deuda_viva = max(total_fiado_historico - total_abonos, 0)    
+    # cuenta las facturas cruzando el rut de la tienda
     facturas_del_mes = Factura.objects.filter(
+        rut_tienda=rut_tienda_actual,  # <-- CORRECCIÓN AQUÍ
         fecha_ingreso__year=hoy.year,
         fecha_ingreso__month=hoy.month
-    ).count()
+    ).count()    
     #multiplicar stock actual * precio de venta de cada producto en el inventario de esta tienda y sumar todo para obtener el valor total del inventario
     valor_inventario = Inventario.objects.filter(
         rut_tienda=rut_tienda_actual, stock_actual__gt=0
     ).aggregate(
         valor_total=Sum(F('stock_actual') * F('precio_venta'))
-    )['valor_total'] or 0
-    #4 GRÁFICOS BARRAS Y DONA    
+    )['valor_total'] or 0 
     #a) grafico de barras (Últimos 7 días)
     hace_7_dias = hoy - timedelta(days=6)
     ventas_semana = Venta.objects.filter(
         rut_tienda=rut_tienda_actual, fecha_venta__date__gte=hace_7_dias
     ).annotate(fecha_corta=TruncDate('fecha_venta')) \
-     .values('fecha_corta').annotate(total=Sum('total_bruto')).order_by('fecha_corta')
+     .values('fecha_corta').annotate(total=Sum('total_bruto')).order_by('fecha_corta')     
     ventas_dict = {v['fecha_corta']: v['total'] for v in ventas_semana}
-    etiquetas_dias, datos_ventas = [], []
+    etiquetas_dias, datos_ventas = [], []    
     for i in range(6, -1, -1):
         dia_iter = hoy - timedelta(days=i)
         etiquetas_dias.append(dia_iter.strftime("%d/%m"))
-        datos_ventas.append(ventas_dict.get(dia_iter, 0))
+        datos_ventas.append(ventas_dict.get(dia_iter, 0))        
     #b) dona (Top 5 Categorias que más vendieron en dinero en el último mes)
     ventas_por_categoria = DetalleVenta.objects.filter(
         id_venta__rut_tienda=rut_tienda_actual
@@ -463,13 +462,13 @@ def pantalla_dashboard(request):
         nombre_cat=F('cod_barra__categoria')
     ).annotate(
         valor_total=Sum(F('cantidad') * F('precio_unitario'))
-    ).order_by('-valor_total')[:5]
+    ).order_by('-valor_total')[:5]    
     donut_labels = [item['nombre_cat'] for item in ventas_por_categoria]
-    donut_data = [int(item['valor_total']) for item in ventas_por_categoria]
+    donut_data = [int(item['valor_total']) for item in ventas_por_categoria]    
     #si esta vacio el gráfico de dona, se muestra un mensaje de sin ventas para evitar errores en el frontend al intentar renderizar un gráfico sin datos
     if not donut_labels:
         donut_labels = ['Sin Ventas']
-        donut_data = [0]
+        donut_data = [0]        
     #5 Empaquetar y enviar
     contexto = {
         'nombre_tienda': nombre_t,
@@ -478,7 +477,6 @@ def pantalla_dashboard(request):
         'kpi_fiados_activos': f"{deuda_viva:,}".replace(',', '.'),
         'kpi_facturas_mes': facturas_del_mes, 
         'kpi_valor_inventario': f"{int(valor_inventario):,}".replace(',', '.'),        
-        # Variables JSON para inyectar en JavaScript
         'chart_labels': json.dumps(etiquetas_dias),
         'chart_data': json.dumps(datos_ventas),
         'donut_labels': json.dumps(donut_labels),
@@ -1218,38 +1216,45 @@ def exportar_inventario_excel(request):
     return response
 
 def enviar_alerta_stock(inventario_obj, tipo_alerta):
-    #alertas de inventario usando el motor SMTP
+    #Despacha alertas de inventario usando la API de Resend para evadir bloqueos de puertos
     try:
-        #recuperacion de administradoress activos de la tienda
+        # Recuperacion de administradores activos de la tienda
         admins = Usuario.objects.filter(
             rut_tienda_id=inventario_obj.rut_tienda_id, 
             rol__iexact='ADMINISTRADOR', 
             es_activo=True
         )
-        correos_destino = [admin.mail.strip().lower() for admin in admins if admin.mail]   
+        correos_destino = [admin.mail.strip().lower() for admin in admins if admin.mail]        
         if correos_destino:
             producto = inventario_obj.cod_barra.descripcion
             stock = float(inventario_obj.stock_actual)
             umbral = inventario_obj.umbral_seguridad if inventario_obj.umbral_seguridad is not None else 0            
-            asunto = f"⚠️ {tipo_alerta}: {producto}"
-            mensaje = (
-                f"Estimado Administrador,\n\n"
-                f"El sistema ha detectado una alerta de inventario en su sucursal:\n\n"
-                f"- Producto: {producto}\n"
-                f"- Stock Actual: {stock} unidades\n"
-                f"- Umbral de Seguridad: {umbral} unidades\n\n"
-                f"Por favor, gestione el abastecimiento a la brevedad."
-            )
-            send_mail(
-                asunto, 
-                mensaje, 
-                'FELIPEFUENTES02@GMAIL.COM',
-                correos_destino, 
-                fail_silently=False 
-            )
-            print(f"✅ Alerta enviada exitosamente a: {correos_destino}")            
+            html_mensaje = f"""
+            <h3>⚠️ {tipo_alerta}: {producto}</h3>
+            <p>Estimado Administrador,</p>
+            <p>El sistema ha detectado una alerta de inventario en su sucursal:</p>
+            <ul>
+                <li><strong>Producto:</strong> {producto}</li>
+                <li><strong>Stock Actual:</strong> {stock} unidades</li>
+                <li><strong>Umbral de Seguridad:</strong> {umbral} unidades</li>
+            </ul>
+            <p>Por favor, gestione el abastecimiento a la brevedad.</p>
+            """          
+            #Llave API
+            resend.api_key = os.environ.get('RESEND_API_KEY', 're_6JNnrWqP_AV7z2yL2jYXTjibvXu8zkLUu')            
+            for correo in correos_destino:
+                try:
+                    resend.Emails.send({
+                        "from": "onboarding@resend.dev",
+                        "to": correo,
+                        "subject": f"⚠️ {tipo_alerta}: {producto}",
+                        "html": html_mensaje
+                    })
+                    print(f"✅ Alerta Resend enviada exitosamente a: {correo}")
+                except Exception as error_individual:
+                    print(f"⚠️ Resend rechazó el envío a {correo}: {error_individual}")                    
     except Exception as e:
-        print(f"🔥 Error crítico al despachar correo de Gmail: {e}")
+        print(f"🔥 Error general del módulo de alertas Resend: {e}")
 
 def api_buscar_cliente(request):
     #Busca un cliente por RUT y devuelve sus datos básicos en JSON

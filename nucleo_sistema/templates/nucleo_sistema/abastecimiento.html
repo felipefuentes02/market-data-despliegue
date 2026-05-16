@@ -65,7 +65,7 @@
             </div>
             <div>
                 <label>Costo Neto ($)</label>
-                <input type="number" id="costo_item" placeholder="0" style="width: 100%;">
+                <input type="number" id="costo_item" placeholder="0" step="0.01" style="width: 100%;">
             </div>
             <div>
                 <label>Precio Venta ($)</label>
@@ -178,9 +178,9 @@
             // Extracción segura usando tus variables
             const codBarra = inputCodBarra.value;
             const descripcion = inputBuscador.value;
-            const cantidad = parseInt(document.getElementById('cantidad_item').value);
-            const costo = parseInt(document.getElementById('costo_item').value);
-            const precioVenta = parseInt(document.getElementById('precio_venta_item').value);            
+            const cantidad = parseFloat(document.getElementById('cantidad_item').value);
+            const costo = parseFloat(document.getElementById('costo_item').value);
+            const precioVenta = parseInt(document.getElementById('precio_venta_item').value);  
             const activarUmbral = document.getElementById('activar_umbral').checked;
             const valorUmbral = parseInt(document.getElementById('umbral_item').value);            
             //logica matemática
@@ -247,8 +247,8 @@
     function recalcularTotalFactura() {
         let sumaTotal = 0;
         detalleFactura.forEach(function(item) {
-            let cantidad = parseInt(item.cantidad) || 0;
-            let costo = parseInt(item.costo) || 0;
+            let cantidad = parseFloat(item.cantidad) || 0;
+            let costo = parseFloat(item.costo) || 0;
             sumaTotal += (cantidad * costo);
         });
         document.getElementById('total-visual-factura').innerText = '$' + sumaTotal.toLocaleString('es-CL');

@@ -119,10 +119,10 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # MOTOR DE CORREOS SMTP DE GMAIL PARA EL ENVIO DE ALARMAS
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+"""EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = 'FELIPEFUENTES02@GMAIL.COM'
-EMAIL_HOST_PASSWORD = 'xcfpvqvhrmoeauoq'
+EMAIL_HOST_PASSWORD = 'xcfpvqvhrmoeauoq'"""
