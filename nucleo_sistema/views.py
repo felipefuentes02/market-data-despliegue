@@ -1,4 +1,5 @@
-import json, csv, random, string, resend
+import json, csv, random, string
+import os
 from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
 from django.db import transaction
@@ -14,6 +15,8 @@ from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from collections import defaultdict
 from django.contrib.auth.hashers import make_password, check_password
+import resend
+
 
 @never_cache
 def buscar_producto_por_codigo(request):
@@ -127,11 +130,11 @@ def registrar_venta(request):
         return JsonResponse({'error': 'Método no permitido. Utilice POST.'}, status=405)
 
 def _procesar_descuento_inventario(item, objeto_venta, rut_tienda_id):
-    #registra el detalle y descuenta el stock, soporte de prductos agranel y creación del inventario por tienda
+    # registra el detalle y descuenta el stock, soporte de productos a granel y creación del inventario por tienda
     codigo_prod = item['codigo']
     cantidad_vendida = float(item['cantidad']) 
-    precio_item = int(item.get('precio_venta', 0))
-    #1 crea o recupera el producto de la maestra
+    precio_item = int(item.get('precio_venta', 0))    
+    # 1 crea o recupera el producto de la maestra
     producto_obj, _ = Producto.objects.get_or_create(
         cod_barra=codigo_prod,
         defaults={
@@ -141,14 +144,15 @@ def _procesar_descuento_inventario(item, objeto_venta, rut_tienda_id):
             'fabricante': 'POR DEFINIR',
             'categoria': 'POR DEFINIR'
         }
-    )    
-    #2 detalle con precio inmutable de la transacción
+    )        
+    # 2 detalle con precio transacción
     DetalleVenta.objects.create(
         id_venta=objeto_venta,
         cod_barra=producto_obj,
         cantidad=cantidad_vendida,
-        precio_unitario=precio_item)
-    #3 descuento del producto en el inventario específico de la tienda, si no existe lo crea con stock 0 y luego le descuenta la cantidad vendida (puede quedar en negativo)
+        precio_unitario=precio_item
+    )    
+    #3 descuento del producto en el inventario específico de la tienda
     inventario_obj, creado = Inventario.objects.get_or_create(
         cod_barra=producto_obj,
         rut_tienda_id=rut_tienda_id,
@@ -159,23 +163,25 @@ def _procesar_descuento_inventario(item, objeto_venta, rut_tienda_id):
         }
     )    
     if inventario_obj.stock_actual is None:
-        inventario_obj.stock_actual = 0        
-    stock_previo = inventario_obj.stock_actual # stock antes del descuento    
+        inventario_obj.stock_actual = 0.0        
+    stock_previo = float(inventario_obj.stock_actual) #stock antes del descuento    
     #el stock pueda ser numero negativo
-    inventario_obj.stock_actual -= cantidad_vendida    
-    #si el producto ya existía pero con precio 0, se asimila el precio digitado por el cajero para agilizar las ventas del mismo producto hoy
+    inventario_obj.stock_actual = stock_previo - float(cantidad_vendida)    
+    #si el producto ya existía pero con precio 0, se asimila el precio digitado por el cajero
     if not creado and inventario_obj.precio_venta == 0 and precio_item > 0:
-        inventario_obj.precio_venta = precio_item
-    inventario_obj.save()
-    #revisa si se activa el umbral de seguridad
-    if inventario_obj.umbral_seguridad is not None:
-        umbral = inventario_obj.umbral_seguridad        
-        # regla 1, el producto se acabo y esta vigilado por el umbral
-        if stock_previo > 0 and inventario_obj.stock_actual <= 0:
-            enviar_alerta_stock(inventario_obj, "QUIEBRE TOTAL DE STOCK")            
-        # regla 2, el producto cruzo el umbral
-        elif stock_previo > umbral and inventario_obj.stock_actual <= umbral:
-            enviar_alerta_stock(inventario_obj, "ALERTA DE UMBRAL CRÍTICO")
+        inventario_obj.precio_venta = precio_item        
+    inventario_obj.save()    
+    #redondeo a 2 decimales
+    stock_redondeado = round(inventario_obj.stock_actual, 2)    
+    #si el producto no tiene umbral, se asimila como 0
+    umbral = inventario_obj.umbral_seguridad if inventario_obj.umbral_seguridad is not None else 0    
+    #se plica a todos los productos al llegar a 
+    if stock_previo > 0 and stock_redondeado <= 0:
+        enviar_alerta_stock(inventario_obj, "QUIEBRE TOTAL DE STOCK")       
+    #alerta a reglas con el umbral
+    elif umbral > 0 and stock_previo > umbral and stock_redondeado <= umbral:
+        enviar_alerta_stock(inventario_obj, "ALERTA DE UMBRAL CRÍTICO")
+
 #valicion de la sesion del cajero
 def pantalla_pos(request):
     id_usuario_actual = request.session.get('id_usuario')    
@@ -368,13 +374,16 @@ def pantalla_login(request):
                 messages.error(request, 'Acceso denegado: Esta cuenta ha sido desactivada.')
                 return redirect('pantalla_login')           
             if usuario_objeto.requiere_cambio_pass:
-                #guarda el id en una sesión temporal para el proceso de cambio de clave y redirige a la pantalla de cambio de contraseña
+                # guarda el id en una sesión temporal...
                 request.session['usuario_en_cambio'] = usuario_objeto.id_usuario
                 return render(request, 'nucleo_sistema/cambiar_password.html')            
-            # iyeccion de variables globales
+            #registro de timestamp para la bd
+            usuario_objeto.ultimo_ingreso = timezone.now()
+            usuario_objeto.save(update_fields=['ultimo_ingreso'])            
+            # inyección de variables globales
             request.session['id_usuario'] = usuario_objeto.id_usuario
             request.session['rol'] = usuario_objeto.rol
-            rol_limpio = usuario_objeto.rol.strip().upper()            
+            rol_limpio = usuario_objeto.rol.strip().upper()           
             #guarda trafico del rol
             if rol_limpio == 'CORPORATIVO':
                 #el usuario maestro no pertenece a una tienda, es global
@@ -400,7 +409,7 @@ def pantalla_dashboard(request):
     if rol_sesion not in ['ADMINISTRADOR', 'ANALISTA']:
         return redirect('pantalla_pos')
     rut_tienda_actual = request.session.get('rut_tienda')
-    hoy = timezone.localtime(timezone.now()).date()    
+    hoy = timezone.now().date()
     #1 datos geograficos
     nombre_t, comuna_t = "Almacén", "Sucursal"
     try:
@@ -518,24 +527,49 @@ def pantalla_catalogo(request):
     return render(request, 'nucleo_sistema/catalogo_productos.html', contexto)
 
 def registrar_producto(request):
-    #toma el POST del formulario y crea el registro en Postgre
-    rol_sesion = str(request.session.get('rol', '')).strip().upper()
+    #crea el producto en la maestra
+    rol_sesion = str(request.session.get('rol', '')).strip().upper()    
     if request.method == 'POST' and rol_sesion == 'ADMINISTRADOR':
         try:
-            #extracción de los datos del POST
+            #extracción y limpieza de datos
+            cod_barra = request.POST.get('cod_barra', '').strip()
+            descripcion = request.POST.get('descripcion', '').strip()
+            volumen = int(request.POST.get('volumen', 0))
+            marca = request.POST.get('marca', '').strip()
+            fabricante = request.POST.get('fabricante', '').strip()
+            categoria = request.POST.get('categoria', '').strip()
+            precio_venta = int(request.POST.get('precio_venta', 0))
+            #validaciones de negovio
+            if precio_venta <= 0:
+                messages.error(request, 'Error: El precio de venta sugerido debe ser mayor a 0.')
+                return redirect('pantalla_catalogo')            
+            if volumen <= 0:
+                messages.error(request, 'Error: El volumen debe ser mayor a 0.')
+                return redirect('pantalla_catalogo')            
+            if not fabricante:
+                messages.error(request, 'Error: El campo fabricante no puede estar vacío.')
+                return redirect('pantalla_catalogo')
+            #código para que no se creen duplicados
+            if Producto.objects.filter(cod_barra=cod_barra).exists():
+                messages.error(request, f'Error: El código de barras {cod_barra} ya existe en la base de datos.')
+                return redirect('pantalla_catalogo')
+            # inyeccion a la bd
             nuevo_producto = Producto(
-                cod_barra=request.POST.get('cod_barra'),
-                descripcion=request.POST.get('descripcion'),
-                volumen=int(request.POST.get('volumen', 0)),
-                marca=request.POST.get('marca'),
-                fabricante=request.POST.get('fabricante'),
-                categoria=request.POST.get('categoria'),
-                precio_venta=int(request.POST.get('precio_venta', 0))
+                cod_barra=cod_barra,
+                descripcion=descripcion,
+                volumen=volumen,
+                marca=marca,
+                fabricante=fabricante,
+                categoria=categoria,
+                precio_venta=precio_venta
             )
-            nuevo_producto.save()            
+            nuevo_producto.save()
+            messages.success(request, 'Producto registrado exitosamente en el catálogo.')            
+        except ValueError:
+            messages.error(request, "Error de formato: Asegúrese de ingresar números válidos en volumen y precio.")
         except Exception as e:
-            print(f"Error al guardar producto: {e}")
-    #redirigir a la misma pantalla para ver la tabla actualizada
+            # Exponemos el error de PostgreSQL en la pantalla
+            messages.error(request, f"Error interno al guardar en base de datos: {str(e)}")            
     return redirect('pantalla_catalogo')
 
 def pantalla_abastecimiento(request):
@@ -560,27 +594,30 @@ def registrar_abastecimiento_api(request):
                     fecha_ingreso=timezone.now().date()
                 )
                 for item in datos['items']:
-                    #2 guardar detalle de factura
+                    #aceptar decimales de la factura
+                    cantidad_recibida = float(item['cantidad'])
+                    #guardar detalle de factura
                     DetalleFactura.objects.create(
                         folio_factura=factura_obj,
                         cod_barra_id=item['codBarra'],
-                        cantidad=item['cantidad'],
+                        cantidad=cantidad_recibida,
                         valor_compra=item['costo']
-                    )
+                    )                    
                     umbral_recibido = item.get('umbral_seguridad')
-                    umbral_final = int(umbral_recibido) if umbral_recibido is not None else None
+                    umbral_final = int(umbral_recibido) if umbral_recibido is not None else None                    
                     inventario_obj, creado = Inventario.objects.get_or_create(
                         cod_barra_id=item['codBarra'],
                         rut_tienda_id=datos['rut_tienda'],
                         defaults={
-                            'stock_actual': 0, 
+                            'stock_actual': 0.0, 
                             'precio_venta': int(item['precio_venta']), 
                             'umbral_seguridad': umbral_final
                         }
                     )                    
-                    inventario_obj.stock_actual += int(item['cantidad'])
+                    stock_actual_bd = float(inventario_obj.stock_actual if inventario_obj.stock_actual else 0.0)
+                    inventario_obj.stock_actual = stock_actual_bd + cantidad_recibida                    
                     inventario_obj.precio_venta = int(item['precio_venta'])
-                    inventario_obj.umbral_seguridad = umbral_final # sobreescribe umbral con la nueva decisión del administrador
+                    inventario_obj.umbral_seguridad = umbral_final
                     inventario_obj.save()
                 return JsonResponse({'mensaje': 'Abastecimiento procesado'}, status=201)
         except Exception as e:
@@ -747,15 +784,17 @@ def registrar_usuario(request):
             while Usuario.objects.filter(nombre_usuario=nombre_usuario_final).exists():
                 nombre_usuario_final = f"{base_usuario}{contador}"
                 contador += 1
-            #3 inyeccion a bd
+            # 3 inyeccion a bd
             nuevo_usuario = Usuario(
                 nombre_usuario=nombre_usuario_final,
+                nombre=nombre, # <-- CORRECCIÓN: Esta es la línea que faltaba
                 primer_apellido=primer_apellido,
                 segundo_apellido=segundo_apellido,
                 rol=rol,
                 mail=mail,
                 password=make_password(password),
                 es_activo=True,
+                requiere_cambio_pass=True,
                 fecha_creacion=timezone.now(),
                 rut_tienda_id=rut_tienda_admin
             )
@@ -819,15 +858,6 @@ def api_cambiar_estado(request):
 def pantalla_recuperar_password(request):
     #muestra el formulario para ingresar el correo asociado a la cuenta y recibir una clave temporal por correo para recuperar el acceso. Para reforzar la seguridad, se implementa un proceso de verificación que solo envía la clave temporal si el correo ingresado corresponde a un usuario activo con rol de Administrador o Analista, evitando así que cuentas de clientes o usuarios desactivados puedan ser objetivo de este proceso.
     return render(request, 'nucleo_sistema/recuperar_password.html')
-
-import string
-import random
-import os
-import resend
-from django.contrib import messages
-from django.shortcuts import render, redirect
-from django.contrib.auth.hashers import make_password
-from nucleo_sistema.models import Usuario
 
 def procesar_recuperacion(request):
     if request.method == 'POST':
@@ -1188,19 +1218,19 @@ def exportar_inventario_excel(request):
     return response
 
 def enviar_alerta_stock(inventario_obj, tipo_alerta):
-    #Busca a los administradores de la sucursal y despacha la alerta de inventario por correo utilizando la función send_mail de Django. Para reforzar la seguridad y privacidad, se implementa un filtro que asegura que las alertas solo se envíen a los administradores activos de la tienda específica donde se detectó el problema de stock, evitando así que usuarios de otras sucursales o con roles no administrativos reciban información sensible sobre el inventario.
+    #alertas de inventario usando el motor SMTP
     try:
-        # Extraemos a todos los administradores activos de esa tienda
+        #recuperacion de administradoress activos de la tienda
         admins = Usuario.objects.filter(
             rut_tienda_id=inventario_obj.rut_tienda_id, 
             rol__iexact='ADMINISTRADOR', 
             es_activo=True
         )
-        correos_destino = [admin.mail for admin in admins if admin.mail]        
+        correos_destino = [admin.mail.strip().lower() for admin in admins if admin.mail]   
         if correos_destino:
             producto = inventario_obj.cod_barra.descripcion
-            stock = inventario_obj.stock_actual
-            umbral = inventario_obj.umbral_seguridad            
+            stock = float(inventario_obj.stock_actual)
+            umbral = inventario_obj.umbral_seguridad if inventario_obj.umbral_seguridad is not None else 0            
             asunto = f"⚠️ {tipo_alerta}: {producto}"
             mensaje = (
                 f"Estimado Administrador,\n\n"
@@ -1209,10 +1239,17 @@ def enviar_alerta_stock(inventario_obj, tipo_alerta):
                 f"- Stock Actual: {stock} unidades\n"
                 f"- Umbral de Seguridad: {umbral} unidades\n\n"
                 f"Por favor, gestione el abastecimiento a la brevedad."
-            )            
-            send_mail(asunto, mensaje, 'soporte@marketdata.cl', correos_destino, fail_silently=True)
+            )
+            send_mail(
+                asunto, 
+                mensaje, 
+                'FELIPEFUENTES02@GMAIL.COM',
+                correos_destino, 
+                fail_silently=False 
+            )
+            print(f"✅ Alerta enviada exitosamente a: {correos_destino}")            
     except Exception as e:
-        print(f"🔥 Error al despachar alerta de correo: {e}")
+        print(f"🔥 Error crítico al despachar correo de Gmail: {e}")
 
 def api_buscar_cliente(request):
     #Busca un cliente por RUT y devuelve sus datos básicos en JSON

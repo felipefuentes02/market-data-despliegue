@@ -56,7 +56,7 @@ class Comuna(models.Model):
 class DetalleFactura(models.Model):
     id_detalle_factura = models.AutoField(primary_key=True)
     cod_barra = models.ForeignKey('Producto', models.DO_NOTHING, db_column='cod_barra')
-    cantidad = models.IntegerField()
+    cantidad = models.FloatField()
     valor_compra = models.IntegerField()
     
     folio_factura = models.ForeignKey('Factura', models.DO_NOTHING, db_column='folio_factura')
@@ -70,7 +70,7 @@ class DetalleVenta(models.Model):
     id_detalle = models.AutoField(primary_key=True)
     id_venta = models.ForeignKey('Venta', models.DO_NOTHING, db_column='id_venta')
     cod_barra = models.ForeignKey('Producto', models.DO_NOTHING, db_column='cod_barra')
-    cantidad = models.IntegerField()
+    cantidad = models.FloatField()
     precio_unitario = models.IntegerField() 
 
     class Meta:
@@ -113,7 +113,7 @@ class Inventario(models.Model):
     id = models.AutoField(primary_key=True)    
     cod_barra = models.ForeignKey('Producto', models.DO_NOTHING, db_column='cod_barra')
     rut_tienda = models.ForeignKey('Tienda', models.DO_NOTHING, db_column='rut_tienda')
-    stock_actual = models.IntegerField()
+    stock_actual = models.FloatField()
     precio_venta = models.IntegerField()
     umbral_seguridad = models.IntegerField(null=True, blank=True)
 
@@ -129,6 +129,7 @@ class Producto(models.Model):
     marca = models.CharField(max_length=80)
     fabricante = models.CharField(max_length=80)
     categoria = models.CharField(max_length=50)
+    precio_venta = models.IntegerField()
 
     class Meta:
         managed = False

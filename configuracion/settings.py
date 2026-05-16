@@ -109,7 +109,7 @@ TIME_ZONE = 'America/Santiago'
 
 USE_I18N = True
 
-USE_TZ = True
+USE_TZ = False
 
 
 # Static files (CSS, JavaScript, Images)
@@ -125,6 +125,4 @@ EMAIL_PORT = 465
 EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = 'FELIPEFUENTES02@GMAIL.COM'
-EMAIL_HOST_PASSWORD = 'xcfpvqvhrmoeauoq'
-EMAIL_HOST_USER = 'FELIPEFUENTES02@GMAIL.COM' #correo que se usará para enviar los correos de alertas
 EMAIL_HOST_PASSWORD = 'xcfpvqvhrmoeauoq'

@@ -33,6 +33,20 @@
     <div class="contenedor" style="display: grid; grid-template-columns: 3fr 7fr; gap: 20px; align-items: start; max-height: 85vh;">        
         <div class="panel" style="position: sticky; top: 20px;">
             <h3>Nuevo Producto</h3>
+            {% if messages %}
+                <div style="margin-bottom: 20px;">
+                    {% for message in messages %}
+                        <div style="padding: 15px; border-radius: 5px; margin-bottom: 10px; font-size: 0.9em; font-weight: bold;
+                                    {% if 'error' in message.tags %}
+                                        color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb;
+                                    {% else %}
+                                        color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb;
+                                    {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
             <form method="POST" action="{% url 'registrar_producto' %}">
                 {% csrf_token %}
                 <div class="grupo-input">
