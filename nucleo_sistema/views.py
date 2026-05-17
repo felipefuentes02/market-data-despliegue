@@ -284,6 +284,7 @@ def abrir_caja(request):
         sesion = CajaSesion.objects.create(
             id_usuario_id=id_usuario_real,
             rut_tienda_id=rut_tienda_real,
+            fecha_apertura=timezone.now(),
             monto_apertura=int(datos.get('monto_apertura', 0)),
             estado=True
         )
