@@ -237,7 +237,7 @@ class CajaSesion(models.Model):
     id_sesion = models.AutoField(primary_key=True)
     id_usuario = models.ForeignKey('Usuario', models.DO_NOTHING, db_column='id_usuario')
     rut_tienda = models.ForeignKey('Tienda', models.DO_NOTHING, db_column='rut_tienda')
-    fecha_apertura = models.DateTimeField(auto_now_add=True)
+    fecha_apertura = models.DateTimeField()
     fecha_cierre = models.DateTimeField(null=True, blank=True)
     monto_apertura = models.IntegerField()
     monto_cierre_real = models.IntegerField(null=True, blank=True)

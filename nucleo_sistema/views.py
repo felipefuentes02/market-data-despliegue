@@ -90,12 +90,18 @@ def registrar_venta(request):
                         _procesar_descuento_inventario(item, venta_pagada, rut_tienda_id)
                 #2 PROCESAR PRODUCTOS FIADOS
                 if carrito_fiado and cliente_datos:
+                    rut_c = str(cliente_datos.get('rut', '')).strip()
+                    nom_c = str(cliente_datos.get('nombre', '')).strip()
+                    ape_c = str(cliente_datos.get('apellido', '')).strip()
+                    #cancela si fata un dato
+                    if not rut_c or not nom_c or not ape_c:
+                        return JsonResponse({'error': 'Rechazado por el servidor: El cliente fiado requiere RUT, Nombre y Apellido obligatoriamente.'}, status=400)
                     # busca al cliente o lo crea
                     cliente_obj, _ = ClienteFiado.objects.get_or_create(
-                        rut=cliente_datos['rut'],
+                        rut=rut_c,
                         defaults={
-                            'nombre': cliente_datos['nombre'],
-                            'apellido': cliente_datos['apellido']
+                            'nombre': nom_c,
+                            'apellido': ape_c
                         }
                     )                    
                     # el servidor calcula el total fiado
