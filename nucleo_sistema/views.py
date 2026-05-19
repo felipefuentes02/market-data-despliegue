@@ -244,18 +244,18 @@ def consultar_deuda_cliente(request):
     
 @csrf_exempt
 def registrar_abono(request):
-    #recibe el dinero para cuadrar la caja y rebaja la deuda del cliente fiado
+    # recibe el dinero para cuadrar la caja y rebaja la deuda del cliente fiado
     if request.method == 'POST':
         try:
             datos = json.loads(request.body)
             rut = datos.get('rut_cliente')
             monto_abono = int(datos.get('monto', 0))
-            id_usuario_id = datos.get('id_usuario', 1) 
+            id_usuario_id = datos.get('id_usuario', 1)
             rut_tienda_actual = datos.get('rut_tienda') or request.session.get('rut_tienda')            
             if monto_abono <= 0:
-                return JsonResponse({'error': 'El monto del abono debe ser mayor a cero.'}, status=400)
+                return JsonResponse({'error': 'El monto del abono debe ser mayor a cero.'}, status=400)                
             with transaction.atomic():
-                #1 ingresar el dinero quedando amarrado a la tienda
+                # 1 ingresar el dinero quedando amarrado a la tienda
                 nuevo_abono = AbonoFiado.objects.create(
                     fecha_pago=timezone.now(),
                     monto=monto_abono,
@@ -263,16 +263,35 @@ def registrar_abono(request):
                     id_usuario_id=id_usuario_id,
                     rut_tienda_id=rut_tienda_actual
                 )
-                #2 limpieza de bdd: Si el cliente paga su deuda, se marcan como pagadas todas las compras antiguas para cerrar el ciclo
-                suma_compras = Venta.objects.filter(rut_cliente=rut).aggregate(Sum('total_bruto'))['total_bruto__sum'] or 0
-                suma_abonos = AbonoFiado.objects.filter(rut_cliente=rut).aggregate(Sum('monto'))['monto__sum'] or 0                
-                #con este ultimo abono el cliente dejó su cuenta en cero o incluso a favor, por lo que se cierran todas sus deudas antiguas
-                if suma_abonos >= suma_compras:
-                    Venta.objects.filter(rut_cliente=rut, estado_pago=False).update(estado_pago=True)
-            return JsonResponse({
-                'mensaje': 'Abono registrado exitosamente. Caja cuadrada.',
-                'id_abono': nuevo_abono.id_abono
-            }, status=201)
+                with connection.cursor() as cursor:
+                    # sumar compras históricas de esta tienda
+                    cursor.execute("""
+                        SELECT COALESCE(SUM(total_bruto), 0) 
+                        FROM venta 
+                        WHERE (rut_cliente = %s OR id_cliente_fiado = (SELECT id_cliente_fiado FROM cliente_fiado WHERE rut = %s))
+                        AND rut_tienda = %s
+                    """, [rut, rut, rut_tienda_actual])
+                    suma_compras = cursor.fetchone()[0]                    
+                    # sumar abonos históricos de esta tienda
+                    cursor.execute("""
+                        SELECT COALESCE(SUM(monto), 0) 
+                        FROM abono_fiado 
+                        WHERE rut_cliente = %s AND rut_tienda = %s
+                    """, [rut, rut_tienda_actual])
+                    suma_abonos = cursor.fetchone()[0]                    
+                    # s el saldo es cero o a favor, cerrar las deudas antiguas
+                    if suma_abonos >= suma_compras:
+                        cursor.execute("""
+                            UPDATE venta 
+                            SET estado_pago = TRUE 
+                            WHERE (rut_cliente = %s OR id_cliente_fiado = (SELECT id_cliente_fiado FROM cliente_fiado WHERE rut = %s))
+                            AND rut_tienda = %s
+                            AND estado_pago = FALSE
+                        """, [rut, rut, rut_tienda_actual])
+                return JsonResponse({
+                    'mensaje': 'Abono registrado exitosamente. Caja cuadrada.',
+                    'id_abono': nuevo_abono.id_abono
+                }, status=201)                
         except Exception as error:
             return JsonResponse({'error': f'Error al registrar el abono: {str(error)}'}, status=500)
     else:
@@ -437,7 +456,7 @@ def pantalla_dashboard(request):
         pass        
     #2 calcula ventas del dia y fiados activos, con candados de tienda para evitar contaminación cruzada entre tiendas en caso de que un cliente compre en varias sucursales o un analista revise varias tiendas
     ventas_hoy = Venta.objects.filter(
-        rut_tienda=rut_tienda_actual, fecha_venta__date=hoy
+        rut_tienda=rut_tienda_actual, fecha_venta__date=hoy, estado_pago=True
     ).aggregate(total=Sum('total_bruto'))['total'] or 0    
     #sumar todas las compras fiadas históricas de esta tienda
     total_fiado_historico = Venta.objects.filter(
@@ -450,7 +469,7 @@ def pantalla_dashboard(request):
     deuda_viva = max(total_fiado_historico - total_abonos, 0)    
     # cuenta las facturas cruzando el rut de la tienda
     facturas_del_mes = Factura.objects.filter(
-        rut_tienda=rut_tienda_actual,  # <-- CORRECCIÓN AQUÍ
+        rut_tienda=rut_tienda_actual,
         fecha_ingreso__year=hoy.year,
         fecha_ingreso__month=hoy.month
     ).count()    
@@ -463,7 +482,7 @@ def pantalla_dashboard(request):
     #a) grafico de barras (Últimos 7 días)
     hace_7_dias = hoy - timedelta(days=6)
     ventas_semana = Venta.objects.filter(
-        rut_tienda=rut_tienda_actual, fecha_venta__date__gte=hace_7_dias
+        rut_tienda=rut_tienda_actual, fecha_venta__date__gte=hace_7_dias, estado_pago=True
     ).annotate(fecha_corta=TruncDate('fecha_venta')) \
      .values('fecha_corta').annotate(total=Sum('total_bruto')).order_by('fecha_corta')     
     ventas_dict = {v['fecha_corta']: v['total'] for v in ventas_semana}
