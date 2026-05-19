@@ -596,7 +596,8 @@ def registrar_abastecimiento_api(request):
                     folio_factura=datos['folio'],
                     es_compra_directa=datos['es_compra_directa'],
                     fecha_emision=datos['fecha_emision'],
-                    fecha_ingreso=timezone.now().date()
+                    fecha_ingreso=timezone.now().date(),
+                    rut_tienda_id=datos['rut_tienda']
                 )
                 for item in datos['items']:
                     #aceptar decimales de la factura
