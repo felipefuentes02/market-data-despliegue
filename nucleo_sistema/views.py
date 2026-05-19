@@ -60,11 +60,11 @@ def registrar_venta(request):
             id_usuario_id = datos.get('id_usuario')            
             carrito_pagado = datos.get('carrito_pagado', [])
             carrito_fiado = datos.get('carrito_fiado', [])
-            cliente_datos = datos.get('cliente')
+            cliente_datos = datos.get('cliente')            
             if not carrito_pagado and not carrito_fiado:
-                return JsonResponse({'error': 'No hay productos para procesar'}, status=400)            
+                return JsonResponse({'error': 'No hay productos para procesar'}, status=400)           
             with transaction.atomic():
-                ventas_generadas = []
+                ventas_generadas = []                
                 #1 PROCESAR PRODUCTOS PAGADOS
                 if carrito_pagado:
                     #el servidor calcula su propio total
@@ -74,8 +74,7 @@ def registrar_venta(request):
                         precio = int(item.get('precio_venta', 0))
                         total_bruto_calculado += int(round(cantidad * precio))                        
                     total_neto_pagado = int(round(total_bruto_calculado / 1.19))
-                    iva_pagado = total_bruto_calculado - total_neto_pagado
-                    
+                    iva_pagado = total_bruto_calculado - total_neto_pagado                    
                     venta_pagada = Venta.objects.create(
                         fecha_venta=timezone.now(),
                         total_neto=total_neto_pagado, 
@@ -87,15 +86,15 @@ def registrar_venta(request):
                     )
                     ventas_generadas.append(venta_pagada.id_venta)                    
                     for item in carrito_pagado:
-                        _procesar_descuento_inventario(item, venta_pagada, rut_tienda_id)
+                        _procesar_descuento_inventario(item, venta_pagada, rut_tienda_id)                        
                 #2 PROCESAR PRODUCTOS FIADOS
                 if carrito_fiado and cliente_datos:
                     rut_c = str(cliente_datos.get('rut', '')).strip()
                     nom_c = str(cliente_datos.get('nombre', '')).strip()
-                    ape_c = str(cliente_datos.get('apellido', '')).strip()
+                    ape_c = str(cliente_datos.get('apellido', '')).strip()                    
                     #cancela si fata un dato
                     if not rut_c or not nom_c or not ape_c:
-                        return JsonResponse({'error': 'Rechazado por el servidor: El cliente fiado requiere RUT, Nombre y Apellido obligatoriamente.'}, status=400)
+                        return JsonResponse({'error': 'Rechazado por el servidor: El cliente fiado requiere RUT, Nombre y Apellido obligatoriamente.'}, status=400)                    
                     # busca al cliente o lo crea
                     cliente_obj, _ = ClienteFiado.objects.get_or_create(
                         rut=rut_c,
@@ -103,7 +102,7 @@ def registrar_venta(request):
                             'nombre': nom_c,
                             'apellido': ape_c
                         }
-                    )                    
+                    )                                  
                     # el servidor calcula el total fiado
                     total_fiado_calculado = 0
                     for item in carrito_fiado:
@@ -112,6 +111,7 @@ def registrar_venta(request):
                         total_fiado_calculado += int(round(cantidad * precio))                        
                     total_neto_fiado = int(round(total_fiado_calculado / 1.19))
                     iva_fiado = total_fiado_calculado - total_neto_fiado                    
+                    
                     #generacion de registro de deuda
                     venta_fiada = Venta.objects.create(
                         fecha_venta=timezone.now(),
@@ -121,7 +121,7 @@ def registrar_venta(request):
                         estado_pago=False, 
                         rut_tienda_id=rut_tienda_id, 
                         id_usuario_id=id_usuario_id,
-                        rut_cliente_id=cliente_obj.rut 
+                        rut_cliente=cliente_obj 
                     )
                     ventas_generadas.append(venta_fiada.id_venta)                    
                     for item in carrito_fiado:
