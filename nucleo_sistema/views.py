@@ -263,31 +263,20 @@ def registrar_abono(request):
                     id_usuario_id=id_usuario_id,
                     rut_tienda_id=rut_tienda_actual
                 )
-                with connection.cursor() as cursor:
-                    # sumar compras históricas de esta tienda
-                    cursor.execute("""
-                        SELECT COALESCE(SUM(total_bruto), 0) 
-                        FROM venta 
-                        WHERE (rut_cliente = %s OR id_cliente_fiado = (SELECT id_cliente_fiado FROM cliente_fiado WHERE rut = %s))
-                        AND rut_tienda = %s
-                    """, [rut, rut, rut_tienda_actual])
-                    suma_compras = cursor.fetchone()[0]                    
-                    # sumar abonos históricos de esta tienda
-                    cursor.execute("""
-                        SELECT COALESCE(SUM(monto), 0) 
-                        FROM abono_fiado 
-                        WHERE rut_cliente = %s AND rut_tienda = %s
-                    """, [rut, rut_tienda_actual])
-                    suma_abonos = cursor.fetchone()[0]                    
-                    # s el saldo es cero o a favor, cerrar las deudas antiguas
-                    if suma_abonos >= suma_compras:
-                        cursor.execute("""
-                            UPDATE venta 
-                            SET estado_pago = TRUE 
-                            WHERE (rut_cliente = %s OR id_cliente_fiado = (SELECT id_cliente_fiado FROM cliente_fiado WHERE rut = %s))
-                            AND rut_tienda = %s
-                            AND estado_pago = FALSE
-                        """, [rut, rut, rut_tienda_actual])
+                suma_compras = Venta.objects.filter(
+                    rut_cliente_id=rut,
+                    rut_tienda_id=rut_tienda_actual
+                ).aggregate(total=Sum('total_bruto'))['total'] or 0                
+                suma_abonos = AbonoFiado.objects.filter(
+                    rut_cliente_id=rut,
+                    rut_tienda_id=rut_tienda_actual
+                ).aggregate(total=Sum('monto'))['total'] or 0
+                if suma_abonos >= suma_compras:
+                    Venta.objects.filter(
+                        rut_cliente_id=rut,
+                        rut_tienda_id=rut_tienda_actual,
+                        estado_pago=False
+                    ).update(estado_pago=True)                    
                 return JsonResponse({
                     'mensaje': 'Abono registrado exitosamente. Caja cuadrada.',
                     'id_abono': nuevo_abono.id_abono
