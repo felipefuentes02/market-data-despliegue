@@ -16,6 +16,7 @@ from django.views.decorators.cache import never_cache
 from collections import defaultdict
 from django.contrib.auth.hashers import make_password, check_password
 import resend
+from django.db import connection
 
 
 @never_cache
@@ -123,6 +124,15 @@ def registrar_venta(request):
                         id_usuario_id=id_usuario_id,
                         rut_cliente=cliente_obj 
                     )
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            UPDATE venta 
+                            SET id_cliente_fiado = (SELECT id_cliente_fiado FROM cliente_fiado WHERE rut = %s)
+                            WHERE id_venta = %s
+                        """, [rut_c, venta_fiada.id_venta])
+                    ventas_generadas.append(venta_fiada.id_venta)                    
+                    for item in carrito_fiado:
+                        _procesar_descuento_inventario(item, venta_fiada, rut_tienda_id)
                     ventas_generadas.append(venta_fiada.id_venta)                    
                     for item in carrito_fiado:
                         _procesar_descuento_inventario(item, venta_fiada, rut_tienda_id)            
