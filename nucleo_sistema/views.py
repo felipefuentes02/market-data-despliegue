@@ -1,12 +1,10 @@
-import json, csv, random, string
-import os
+import json, csv, random, string, os, resend
 from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from .models import Producto, Venta, DetalleVenta, Inventario, Tienda, Usuario, DetalleFactura, ClienteFiado, AbonoFiado, CajaSesion, Factura, Comuna, DuenoTienda, AjusteInventario
 from django.shortcuts import render, redirect
-from django.core.mail import send_mail
 from django.contrib import messages
 from django.db.models.functions import TruncDate
 from datetime import timedelta
@@ -15,9 +13,7 @@ from django.core.paginator import Paginator
 from django.views.decorators.cache import never_cache
 from collections import defaultdict
 from django.contrib.auth.hashers import make_password, check_password
-import resend
 from django.db import connection
-
 
 @never_cache
 def buscar_producto_por_codigo(request):
@@ -311,36 +307,29 @@ def abrir_caja(request):
 def obtener_estado_cuadratura(request):
     """ Calcula el dinero en caja con sincronización nativa de base de datos """
     id_usuario = request.session.get('id_usuario')
-    rut_tienda_actual = request.session.get('rut_tienda')
-    
+    rut_tienda_actual = request.session.get('rut_tienda')    
     if not id_usuario:
         return JsonResponse({'error': 'Sesión expirada.'}, status=403)
-
     sesion = CajaSesion.objects.filter(
         id_usuario_id=id_usuario, 
         rut_tienda_id=rut_tienda_actual, 
         estado=True
-    ).last()
-    
+    ).last()    
     if not sesion:
         return JsonResponse({'error': 'No hay una sesión de caja abierta.'}, status=404)
-
-    # Buscamos directamente desde la apertura, sin parches matemáticos
+    #buscamos directamente desde la apertura
     ventas_hoy = Venta.objects.filter(
         id_usuario_id=id_usuario, 
         estado_pago=True, 
         fecha_venta__gte=sesion.fecha_apertura,
         rut_tienda_id=rut_tienda_actual
     ).aggregate(Sum('total_bruto'))['total_bruto__sum'] or 0
-
     abonos_hoy = AbonoFiado.objects.filter(
         id_usuario_id=id_usuario, 
         fecha_pago__gte=sesion.fecha_apertura,
         rut_tienda_id=rut_tienda_actual
     ).aggregate(Sum('monto'))['monto__sum'] or 0
-
-    total_esperado = sesion.monto_apertura + ventas_hoy + abonos_hoy
-    
+    total_esperado = sesion.monto_apertura + ventas_hoy + abonos_hoy    
     return JsonResponse({
         'id_sesion': sesion.id_sesion,
         'fecha_apertura': sesion.fecha_apertura,
@@ -973,11 +962,10 @@ def pantalla_reportes(request):
     return render(request, 'nucleo_sistema/reportes_analitica.html', contexto)
 
 def pantalla_consola_analista(request):
-    from django.utils import timezone
     #filtros y sincronización de CSV para análisis avanzado en Excel. Solo accesible para Analistas. Para optimizar el rendimiento y la experiencia del usuario, se implementa un sistema de filtrado dinámico en cascada que permite a los analistas refinar sus consultas de manera eficiente sin necesidad de recargar toda la página, y un exportador CSV que genera archivos con codificación UTF-8 y delimitadores personalizados para asegurar la compatibilidad con Excel y mantener la integridad de los datos, incluso con grandes volúmenes de información.
     rol_sesion = str(request.session.get('rol', '')).strip().upper()
     if rol_sesion != 'ANALISTA':
-        return redirect('pantalla_pos')
+        return redirect('pantalla_login')
     tiendas = Tienda.objects.all().order_by('nombre')
     regiones_disponibles = Comuna.objects.values_list('region', flat=True).distinct().order_by('region')
     comunas_disponibles = Comuna.objects.all().order_by('nombre_comuna')
@@ -1005,8 +993,6 @@ def pantalla_consola_analista(request):
         ventas_query = ventas_query.filter(fecha_venta__lte=f"{fecha_fin} 23:59:59")
     #4 generar CSV
     if request.GET.get('exportar') == 'csv':
-        import csv
-        from django.http import HttpResponse 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="Auditoria_BI_{fecha_inicio}_al_{fecha_fin}.csv"'
         response.write(u'\ufeff'.encode('utf8'))        
@@ -1020,7 +1006,7 @@ def pantalla_consola_analista(request):
         ])
         #consulta optimizada con select_related para evitar consultas adicionales por cada fila al acceder a campos relacionados, y prefetch_related para cargar en batch las relaciones de productos y tiendas, reduciendo drásticamente el número de consultas a la base de datos y mejorando el rendimiento incluso con grandes volúmenes de datos.
         detalles = DetalleVenta.objects.filter(id_venta__in=ventas_query).select_related('id_venta', 'cod_barra', 'id_venta__rut_tienda')
-        #MOTOR DE PRE-PROCESAMIENTO (Optimización de Memoria)
+        #MOTOR DE PRE-PROCESAMIENTO
         codigos_presentes = detalles.values_list('cod_barra', flat=True).distinct()        
         #1 ultimo precio de compra
         costos_historicos = DetalleFactura.objects.filter(cod_barra_id__in=codigos_presentes).order_by('id_detalle_factura')
@@ -1043,8 +1029,7 @@ def pantalla_consola_analista(request):
             if timezone.is_aware(v.fecha_venta):
                 fecha_local = timezone.localtime(v.fecha_venta)
             else:
-                fecha_local = v.fecha_venta
-            
+                fecha_local = v.fecha_venta            
             writer.writerow([
                 comuna_obj.region if comuna_obj else 'N/A',
                 comuna_obj.nombre_comuna if comuna_obj else 'N/A',
@@ -1064,7 +1049,7 @@ def pantalla_consola_analista(request):
                 margen_u
             ])            
         return response    
-    #5 DASHBOARD VISUAL (Optimización de Consultas y Processing en RAM)    
+    #5 DASHBOARD VISUAL 
     total_bruto = ventas_query.aggregate(total=Sum('total_bruto'))['total'] or 0    
     #a) graficos fabricantes
     ventas_fabricante = DetalleVenta.objects.filter(id_venta__in=ventas_query).values(
@@ -1292,7 +1277,7 @@ def api_buscar_cliente(request):
         return JsonResponse({
             'existe': True,
             'nombre': cliente.nombre,
-            'apellido': cliente.apellido
+            'apellido': cliente.apellido 
         })
     except ClienteFiado.DoesNotExist:
         return JsonResponse({'existe': False})
@@ -1331,12 +1316,11 @@ def pantalla_corporativa(request):
 
 def gestion_tiendas_corporativo(request):
     """ Módulo Maestro para crear y visualizar las tiendas del sistema. """
-    # Barrera de seguridad
+    #barrera de seguridad
     rol = str(request.session.get('rol', '')).strip().upper()
     if rol != 'CORPORATIVO':
         return redirect('pantalla_login')
-
-    # Procesamiento del Formulario (Creación de Tienda)
+    #procesamiento del Formulario (Creación de Tienda)
     if request.method == 'POST':
         try:
             rut = request.POST.get('rut_tienda').strip()
@@ -1346,9 +1330,8 @@ def gestion_tiendas_corporativo(request):
             numero = int(request.POST.get('numero', 0))
             detalle = request.POST.get('detalle', '').strip()
             id_comuna = int(request.POST.get('id_comuna'))
-            id_dueno = int(request.POST.get('id_dueno')) # Vinculación con DuenoTienda
-
-            # Inyección en BD
+            id_dueno = int(request.POST.get('id_dueno')) #vinculación con DuenoTienda
+            #Inyección en BD
             Tienda.objects.create(
                 rut_tienda=rut,
                 nombre=nombre,
@@ -1364,12 +1347,10 @@ def gestion_tiendas_corporativo(request):
             messages.error(request, f"Error al registrar la tienda: Verifica que el RUT no esté duplicado. Detalle: {str(e)}")
         
         return redirect('gestion_tiendas_corporativo')
-
-    # Si es GET, preparamos los datos para renderizar la pantalla
+    #si es GET, prepara los datos para renderizar la pantalla
     comunas = Comuna.objects.all().order_by('nombre_comuna')
     duenos = DuenoTienda.objects.all().order_by('nombre')
     tiendas = Tienda.objects.all().order_by('nombre')
-
     return render(request, 'nucleo_sistema/gestion_tiendas.html', {
         'comunas': comunas,
         'duenos': duenos,
@@ -1378,11 +1359,10 @@ def gestion_tiendas_corporativo(request):
 
 def gestion_usuarios_corporativo(request):
     """ Módulo Maestro para crear y visualizar Administradores y Analistas. """
-    # Barrera de seguridad analítica
+    # Barrera de seguridad
     rol_sesion = str(request.session.get('rol', '')).strip().upper()
     if rol_sesion != 'CORPORATIVO':
         return redirect('pantalla_login')
-
     if request.method == 'POST':
         try:
             nombre = request.POST.get('nombre', '').strip()
@@ -1392,29 +1372,23 @@ def gestion_usuarios_corporativo(request):
             mail = request.POST.get('mail', '').strip()
             password = request.POST.get('password', '').strip()
             rut_tienda = request.POST.get('rut_tienda', '').strip()
-
-            # Lógica de asignación de tienda
+            # lógica de asignación de tienda
             if rol_nuevo == 'ANALISTA':
                 tienda_obj = None
-                sufijo = "glb" # Global
+                sufijo = "glb"
             else:
                 tienda_obj = rut_tienda if rut_tienda else None
                 sufijo = rut_tienda[-4:] if rut_tienda else "adm"
-
-            # Generador de Usuario Único Algorítmico
+            # Generador de usurio unico
             if nombre and primer_apellido:
                 base_usuario = f"{nombre[0].lower()}{primer_apellido.lower()}_{sufijo}".replace(" ", "")
             else:
-                base_usuario = f"user_{sufijo}"
-            
+                base_usuario = f"user_{sufijo}"            
             nombre_usuario_final = base_usuario
             contador = 1
             while Usuario.objects.filter(nombre_usuario=nombre_usuario_final).exists():
                 nombre_usuario_final = f"{base_usuario}{contador}"
-                contador += 1
-
-            from django.contrib.auth.hashers import make_password
-            
+                contador += 1            
             nuevo_usuario = Usuario(
                 nombre_usuario=nombre_usuario_final,
                 nombre=nombre,
@@ -1430,17 +1404,14 @@ def gestion_usuarios_corporativo(request):
             )
             nuevo_usuario.save()
             messages.success(request, f"Usuario registrado exitosamente. Credencial asignada: {nombre_usuario_final}")
-
         except Exception as e:
-            messages.error(request, f"Error al registrar usuario: {str(e)}")
-        
+            messages.error(request, f"Error al registrar usuario: {str(e)}")        
         return redirect('gestion_usuarios_corporativo')
 
     # GET: Preparar datos para la pantalla
     tiendas = Tienda.objects.all().order_by('nombre')
-    # Filtramos para mostrar solo Admins y Analistas al usuario corporativo
+    # filtro para mostrar solo Admins y Analistas
     usuarios = Usuario.objects.filter(rol__in=['ADMINISTRADOR', 'ANALISTA']).order_by('nombre')
-
     return render(request, 'nucleo_sistema/gestion_usuarios_corp.html', {
         'tiendas': tiendas,
         'usuarios': usuarios
